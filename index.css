@@ -620,6 +620,8 @@ body {
   flex-shrink: 0;
   transition: transform 0.3s ease;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .perforation-edge {
@@ -783,6 +785,12 @@ body {
   z-index: 1;
   cursor: crosshair;
   touch-action: none;
+  /* touch-action only stops scroll/zoom/pan gestures -- it does not stop
+     iOS's long-press callout menu (Copy/Look Up/Find Selection) or text
+     selection handles, which is what was showing up with Apple Pencil. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Clear single canvas row button */
@@ -905,6 +913,9 @@ body {
   z-index: 1;
   cursor: crosshair;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .clear-sig-btn {
