@@ -1,0 +1,8 @@
+{
+  "name": "inkvoucher",
+  "private": true,
+  "description": "InkVoucher -- hybrid handwritten payment voucher app",
+  "scripts": {
+    "build": "node build.js"
+  }
+}

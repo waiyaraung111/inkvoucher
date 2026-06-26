@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InkVoucher — Hybrid Handwritten Payment Ledger</title>
+  <link rel="stylesheet" href="index.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Auth Screen -->
+  <div class="auth-overlay" id="auth-overlay" hidden>
+    <div class="auth-card">
+      <div class="auth-card-header">
+        <h1>InkVoucher</h1>
+        <span class="badge">Staff Login</span>
+      </div>
+      <form id="login-form">
+        <label class="auth-label" for="login-email">Email</label>
+        <input type="email" id="login-email" required autocomplete="username" placeholder="you@shop.com">
+        <label class="auth-label" for="login-password">Password</label>
+        <input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••">
+        <p class="auth-error" id="auth-error" style="display: none;"></p>
+        <button type="submit" class="btn btn-primary auth-submit-btn" id="login-btn">Log In</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-container" id="app-container" hidden>
+
+    <!-- Sidebar: Ledger Directory -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h2>Ledger History</h2>
+        <button class="toggle-sidebar-btn" id="hide-sidebar-btn" title="Collapse Sidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+      </div>
+      <div class="search-box">
+        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="search-input" placeholder="Search customer, ID, date, phone...">
+        <button class="search-clear-btn" id="search-clear-btn" title="Clear search" hidden>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="filter-chip-row" id="filter-chip-row">
+        <button class="filter-chip active" data-filter="all">All</button>
+        <button class="filter-chip" data-filter="active">Active</button>
+        <button class="filter-chip" data-filter="paid">Paid</button>
+        <button class="filter-chip" data-filter="unpaid">Unpaid</button>
+        <button class="filter-chip" data-filter="void">Void</button>
+      </div>
+      <div class="result-count" id="result-count"></div>
+      <div class="voucher-list" id="voucher-list">
+        <div class="empty-history" id="empty-history">
+          <p>No vouchers saved yet.</p>
+          <span>Fill and scribble a voucher to start!</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Workspace -->
+    <main class="workspace">
+      <header class="workspace-header">
+        <button class="toggle-sidebar-btn" id="show-sidebar-btn" title="Expand Sidebar" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <span>Ledger History</span>
+        </button>
+        <div class="header-logo">
+          <h1>InkVoucher</h1>
+          <span class="badge">Hybrid MVP</span>
+        </div>
+        <div class="top-controls">
+          <button class="btn btn-secondary" id="clear-drawings-btn" title="Clear all drawing canvases only">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16c-1-1-1-2 0-3l10-10c1-1 2-1 3 0l4 4c1 1 1 2 0 3L11 19"/><path d="M5.5 13.5L11 19"/></svg>
+            <span class="btn-label">Clear Handwriting</span>
+          </button>
+          <button class="btn btn-secondary text-danger" id="clear-all-btn" title="Clear handwriting and reset inputs">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            <span class="btn-label">Clear Entire Voucher</span>
+          </button>
+          <div class="divider"></div>
+          <button class="btn btn-secondary" id="logout-btn" title="Log out">
+            <span class="btn-label">Log Out</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Canvas & Sheet Section -->
+      <section class="canvas-section">
+        <!-- Floating Tool Palette -->
+        <div class="canvas-tools-bar">
+          <!-- Active Tool Toggle -->
+          <div class="tool-group">
+            <label class="tool-label">Active Tool</label>
+            <div class="segmented-control tool-segmented">
+              <label class="segmented-option">
+                <input type="radio" name="active-tool" value="pencil" checked>
+                <span class="segmented-label mini-label">Pencil</span>
+              </label>
+              <label class="segmented-option">
+                <input type="radio" name="active-tool" value="eraser">
+                <span class="segmented-label mini-label">Eraser</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- Color Picker -->
+          <div class="tool-group" id="color-picker-group">
+            <label class="tool-label">Pen Color</label>
+            <div class="color-options">
+              <button class="color-btn active blue" data-color="#1d4ed8" title="Blue Ink"></button>
+              <button class="color-btn black" data-color="#0f172a" title="Black Ink"></button>
+              <button class="color-btn red" data-color="#dc2626" title="Red Ink"></button>
+            </div>
+          </div>
+          
+          <div class="divider" id="color-divider"></div>
+          
+          <!-- Stroke Thickness -->
+          <div class="tool-group">
+            <label class="tool-label" for="brush-size">Size</label>
+            <div class="brush-slider-container">
+              <input type="range" id="brush-size" min="1" max="8" value="2.5" step="0.5">
+              <span class="brush-size-val" id="brush-size-val">2.5px</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- The Paper Slip Viewport -->
+        <div class="paper-viewport">
+          <div class="paper-voucher" id="paper-voucher">
+            <div class="perforation-edge"></div>
+            
+            <div class="voucher-template">
+              
+              <!-- Voucher Slip Header -->
+              <div class="voucher-header">
+                <div class="voucher-title-block">
+                  <h2>PAYMENT VOUCHER</h2>
+                  <p class="tagline">HYBRID AUTOMATIC CALCULATIONS</p>
+                </div>
+                <div class="voucher-number-block">
+                  <div class="field">
+                    <span class="label">VOUCHER NO.</span>
+                    <span class="value" id="next-voucher-id">#V-0001</span>
+                  </div>
+                  <div class="field">
+                    <span class="label">DATE</span>
+                    <input type="date" class="date-picker-input" id="voucher-date">
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Grid Receipt Table with Canvases per row -->
+              <div class="voucher-table">
+                <div class="table-header">
+                  <div class="col col-desc">PARTICULARS / DESCRIPTION (WRITE)</div>
+                  <div class="col col-qty">QTY</div>
+                  <div class="col col-price">PRICE ($)</div>
+                  <div class="col col-amount">AMOUNT ($)</div>
+                </div>
+                
+                <!-- Repeat 8 Rows -->
+                <div class="table-row" data-row-idx="0">
+                  <div class="col col-desc">
+                    <canvas class="row-canvas" data-row="0"></canvas>
+                    <button class="clear-row-btn" data-row="0" title="Clear Row Canvas">×</button>
+                  </div>
+                  <div class="col col-qty">
+                    <input type="number" class="qty-input" data-row="0" min="0" placeholder="0">
+                  </div>
+                  <div class="col col-price">
+                    <input type="number" class="price-input" data-row="0" min="0" step="0.01" placeholder="0.00">
+                  </div>
+                  <div class="col col-amount">
+                    <span class="amount-val is-zero" data-row="0"></span>
+                  </div>
+                </div>
+
+                <div class="table-row" data-row-idx="1">
+                  <div class="col col-desc">
+                    <canvas class="row-canvas" data-row="1"></canvas>
+                    <button class="clear-row-btn" data-row="1" title="Clear Row Canvas">×</button>
+                  </div>
+                  <div class="col col-qty">
+                    <input type="number" class="qty-input" data-row="1" min="0" placeholder="0">
+                  </div>
+                  <div class="col col-price">
+                    <input type="number" class="price-input" data-row="1" min="0" step="0.01" placeholder="0.00">
+                  </div>
+                  <div class="col col-amount">
+                    <span class="amount-val is-zero" data-row="1"></span>
+                  </div>
+                </div>
+
+                <div class="table-row" data-row-idx="2">
+                  <div class="col col-desc">
+                    <canvas class="row-canvas" data-row="2"></canvas>
+                    <button class="clear-row-btn" data-row="2" title="Clear Row Canvas">×</button>
+                  </div>
+                  <div class="col col-qty">
+                    <input type="number" class="qty-input" data-row="2" min="0" placeholder="0">
+                  </div>
+                  <div class="col col-price">
+                    <input type="number" class="price-input" data-row="2" min="0" step="0.01" placeholder="0.00">
+                  </div>
+                  <div class="col col-amount">
+                    <span class="amount-val is-zero" data-row="2"></span>
+                  </div>
+                </div>
+
+                <div class="table-row" data-row-idx="3">
+                  <div class="col col-desc">
+                    <canvas class="row-canvas" data-row="3"></canvas>
+                    <button class="clear-row-btn" data-row="3" title="Clear Row Canvas">×</button>
+                  </div>
+                  <div class="col col-qty">
+                    <input type="number" class="qty-input" data-row="3" min="0" placeholder="0">
+                  </div>
+                  <div class="col col-price">
+                    <input type="number" class="price-input" data-row="3" min="0" step="0.01" placeholder="0.00">
+                  </div>
+                  <div class="col col-amount">
+                    <span class="amount-val is-zero" data-row="3"></span>
+                  </div>
+                </div>
+
+                <div class="table-row" data-row-idx="4">
+                  <div class="col col-desc">
+                    <canvas class="row-canvas" data-row="4"></canvas>
+                    <button class="clear-row-btn" data-row="4" title="Clear Row Canvas">×</button>
+                  </div>
+                  <div class="col col-qty">
+                    <input type="number" class="qty-input" data-row="4" min="0" placeholder="0">
+                  </div>
+                  <div class="col col-price">
+                    <input type="number" class="price-input" data-row="4" min="0" step="0.01" placeholder="0.00">
+                  </div>
+                  <div class="col col-amount">
+                    <span class="amount-val is-zero" data-row="4"></span>
+                  </div>
+                </div>
+
+                <div class="table-row" data-row-idx="5">
+                  <div class="col col-desc">
+                    <canvas class="row-canvas" data-row="5"></canvas>
+                    <button class="clear-row-btn" data-row="5" title="Clear Row Canvas">×</button>
+                  </div>
+                  <div class="col col-qty">
+                    <input type="number" class="qty-input" data-row="5" min="0" placeholder="0">
+                  </div>
+                  <div class="col col-price">
+                    <input type="number" class="price-input" data-row="5" min="0" step="0.01" placeholder="0.00">
+                  </div>
+                  <div class="col col-amount">
+                    <span class="amount-val is-zero" data-row="5"></span>
+                  </div>
+                </div>
+
+                <div class="table-row" data-row-idx="6">
+                  <div class="col col-desc">
+                    <canvas class="row-canvas" data-row="6"></canvas>
+                    <button class="clear-row-btn" data-row="6" title="Clear Row Canvas">×</button>
+                  </div>
+                  <div class="col col-qty">
+                    <input type="number" class="qty-input" data-row="6" min="0" placeholder="0">
+                  </div>
+                  <div class="col col-price">
+                    <input type="number" class="price-input" data-row="6" min="0" step="0.01" placeholder="0.00">
+                  </div>
+                  <div class="col col-amount">
+                    <span class="amount-val is-zero" data-row="6"></span>
+                  </div>
+                </div>
+
+                <div class="table-row" data-row-idx="7">
+                  <div class="col col-desc">
+                    <canvas class="row-canvas" data-row="7"></canvas>
+                    <button class="clear-row-btn" data-row="7" title="Clear Row Canvas">×</button>
+                  </div>
+                  <div class="col col-qty">
+                    <input type="number" class="qty-input" data-row="7" min="0" placeholder="0">
+                  </div>
+                  <div class="col col-price">
+                    <input type="number" class="price-input" data-row="7" min="0" step="0.01" placeholder="0.00">
+                  </div>
+                  <div class="col col-amount">
+                    <span class="amount-val is-zero" data-row="7"></span>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- Voucher Slip Footer -->
+              <div class="voucher-footer">
+                <div class="signature-section">
+                  <span class="label">AUTHORIZED SIGNATURE (SIGN)</span>
+                  <div class="sig-canvas-container">
+                    <canvas class="sig-canvas" id="sig-canvas"></canvas>
+                    <button class="clear-sig-btn" id="clear-sig-btn" title="Clear Signature">×</button>
+                  </div>
+                </div>
+                <div class="total-section">
+                  <div class="total-label">TOTAL AMOUNT ($)</div>
+                  <div class="total-box">
+                    <span class="grand-total-val is-zero" id="grand-total-val"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer Action Controls -->
+      <footer class="workspace-footer">
+        <div class="meta-controls">
+          <div class="customer-info-group">
+            <span class="control-label">Customer:</span>
+            <input type="text" id="customer-name-input" class="customer-input" placeholder="Walk-in Customer">
+            <input type="tel" id="customer-phone-input" class="customer-input" placeholder="Phone (optional)">
+          </div>
+
+          <div class="payment-method-group">
+            <span class="control-label">Payment:</span>
+            <div class="segmented-control">
+              <label class="segmented-option">
+                <input type="radio" name="payment-method" value="Cash" checked>
+                <span class="segmented-label">Cash</span>
+              </label>
+              <label class="segmented-option">
+                <input type="radio" name="payment-method" value="Transfer">
+                <span class="segmented-label">Transfer</span>
+              </label>
+              <label class="segmented-option">
+                <input type="radio" name="payment-method" value="PayNow">
+                <span class="segmented-label">PayNow</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="save-actions-group">
+            <button class="btn btn-secondary" id="save-only-btn" title="Save without printing">
+              <span class="btn-spinner" hidden></span>
+              <span class="btn-label">Save Only</span>
+            </button>
+            <button class="btn btn-primary" id="save-print-btn" title="Save and immediately print">
+              <span class="btn-spinner" hidden></span>
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              <span class="btn-label">Save &amp; Print</span>
+            </button>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <!-- Voucher Detail Overlay Modal -->
+    <div class="modal-overlay" id="detail-modal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-info">
+            <h3 id="modal-voucher-id">#V-0000</h3>
+            <span class="modal-date" id="modal-voucher-date">Date: --/--/----</span>
+            <span class="modal-customer" id="modal-customer-name">Customer</span>
+          </div>
+          <button class="close-modal-btn" id="close-modal-btn" title="Close Modal">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="modal-badge-row">
+            <span class="badge payment-badge" id="modal-payment-badge">Cash</span>
+            <span class="status-pill" id="modal-status-badge">Active</span>
+          </div>
+
+          <div class="voucher-preview-container">
+            <img class="voucher-preview-img" id="modal-voucher-img" src="" alt="Handwritten Voucher">
+            <div class="void-overlay" id="modal-void-overlay">VOID</div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="modal-footer-group">
+            <button class="btn btn-secondary" id="mark-paid-btn">Mark Paid</button>
+            <button class="btn btn-secondary" id="mark-unpaid-btn">Mark Unpaid</button>
+            <button class="btn btn-secondary text-danger" id="void-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+              Void
+            </button>
+          </div>
+          <div class="modal-footer-group">
+            <button class="btn btn-secondary" id="print-btn">Print</button>
+            <button class="btn btn-primary" id="download-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom confirm dialog (replaces window.confirm) -->
+    <div class="confirm-overlay" id="confirm-overlay" hidden>
+      <div class="confirm-card">
+        <p class="confirm-message" id="confirm-message"></p>
+        <div class="confirm-actions">
+          <button class="btn btn-secondary" id="confirm-cancel-btn">Cancel</button>
+          <button class="btn btn-primary" id="confirm-ok-btn">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast notifications (replaces window.alert for success/error feedback) -->
+    <div class="toast-container" id="toast-container"></div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="supabase-client.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

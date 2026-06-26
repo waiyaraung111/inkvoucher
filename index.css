@@ -1,0 +1,1574 @@
+/* ==========================================================================
+   InkVoucher - CSS Design System & Layout Stylesheet
+   ========================================================================== */
+
+:root {
+  /* Premium Dark Mode Slate Palette */
+  --bg-darker: #0b0f19;
+  --bg-dark: #0f172a;
+  --bg-card: #1e293b;
+  --bg-card-hover: #334155;
+  --border-color: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  
+  /* Brand Accents */
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --color-success: #10b981;
+  --color-success-hover: #059669;
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+  --color-warning: #f59e0b;
+  --color-warning-hover: #d97706;
+  --color-neutral: #64748b;
+  --color-neutral-hover: #475569;
+
+  /* Spacing scale -- used by new/refactored components for consistency */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* Radius scale -- used by new/refactored components for consistency */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* Voucher Slip Paper Palette */
+  --paper-bg: #fef9c3; /* Traditional warm carbon-copy yellow */
+  --paper-border: #fef08a;
+  --paper-ruled: rgba(59, 130, 246, 0.15); /* Light blue ruled lines */
+  --paper-ink-blue: #1d4ed8;
+  --paper-ink-black: #0f172a;
+  --paper-ink-red: #dc2626;
+  
+  /* Fonts */
+  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: 'Courier Prime', Courier, monospace;
+  
+  /* Layout Sizing & Timing */
+  --sidebar-width: 320px;
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-bounce: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Base resets */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-darker);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+}
+
+.app-container {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  background-color: var(--bg-dark);
+}
+
+.app-container[hidden] {
+  display: none;
+}
+
+/* ==========================================================================
+   Sidebar: Ledger Directory
+   ========================================================================== */
+.sidebar {
+  width: var(--sidebar-width);
+  background-color: var(--bg-darker);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  z-index: 10;
+  transition: var(--transition-smooth);
+}
+
+.sidebar.collapsed {
+  margin-left: calc(-1 * var(--sidebar-width));
+}
+
+.sidebar-header {
+  padding: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.toggle-sidebar-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-smooth);
+}
+
+.toggle-sidebar-btn:hover {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.toggle-sidebar-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.search-box {
+  padding: 16px 24px;
+  position: relative;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.search-box input {
+  width: 100%;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 10px 16px 10px 42px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  outline: none;
+  transition: var(--transition-smooth);
+}
+
+.search-box input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.search-icon {
+  position: absolute;
+  left: 36px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 32px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: var(--transition-smooth);
+}
+
+.search-clear-btn:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.search-clear-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.filter-chip-row {
+  display: flex;
+  gap: 6px;
+  padding: 0 24px 16px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.filter-chip:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.filter-chip.active {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.result-count {
+  padding: 0 24px 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.list-loading {
+  padding: 32px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.voucher-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-history {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-history p {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.empty-history span {
+  font-size: 0.8rem;
+}
+
+.voucher-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  transition: var(--transition-smooth);
+  user-select: none;
+}
+
+.voucher-card:hover {
+  background-color: var(--bg-card-hover);
+  transform: translateY(-2px);
+  border-color: var(--text-muted);
+}
+
+.voucher-card.voided {
+  opacity: 0.65;
+}
+
+.card-thumbnail {
+  width: 60px;
+  height: 80px;
+  background-color: var(--paper-bg);
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.card-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.card-thumbnail .void-stamp-mini {
+  position: absolute;
+  border: 1.5px solid var(--color-danger);
+  color: var(--color-danger);
+  font-size: 8px;
+  font-weight: 800;
+  padding: 1px 2px;
+  border-radius: 2px;
+  transform: rotate(-15deg);
+  background-color: rgba(254, 249, 195, 0.9);
+}
+
+.card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.card-id {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.card-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.card-customer {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.card-payment {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--color-accent);
+}
+
+.card-payment.transfer-method {
+  background-color: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+}
+
+.card-payment.paynow-method {
+  background-color: rgba(236, 72, 153, 0.15);
+  color: #ec4899;
+}
+
+.card-total {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.card-footer-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   Status Pill -- single shared component for Paid/Unpaid/Void, used on both
+   ledger cards and the detail modal so status always looks the same way.
+   ========================================================================== */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  padding: 3px 12px;
+}
+
+.status-pill.sm {
+  font-size: 0.6rem;
+  padding: 2px 8px;
+}
+
+.status-pill.is-paid {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
+.status-pill.is-unpaid {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: var(--color-warning);
+}
+
+.status-pill.is-void {
+  background-color: rgba(100, 116, 139, 0.18);
+  color: var(--color-neutral);
+}
+
+/* ==========================================================================
+   Workspace Layout
+   ========================================================================== */
+.workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+.workspace-header {
+  height: 70px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bg-dark);
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-logo h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background-color: var(--bg-card);
+  padding: 4px 10px;
+  border-radius: 20px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.top-controls {
+  display: flex;
+  gap: 12px;
+}
+
+.canvas-section {
+  flex: 1;
+  background-color: #0c111d;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 20px 12px;
+  align-items: center;
+  justify-content: flex-start;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Floating Tools Bar */
+.canvas-tools-bar {
+  display: flex;
+  background-color: rgba(30, 41, 59, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  padding: 10px 20px;
+  border-radius: 16px;
+  margin-bottom: 12px;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tool-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+}
+
+.color-options {
+  display: flex;
+  gap: 8px;
+}
+
+.color-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: var(--transition-bounce);
+  position: relative;
+}
+
+.color-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: white;
+  transition: var(--transition-bounce);
+}
+
+.color-btn.active::after {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.color-btn.active {
+  transform: scale(1.15);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+}
+
+.color-btn.blue { background-color: var(--paper-ink-blue); }
+.color-btn.black { background-color: var(--paper-ink-black); }
+.color-btn.red { background-color: var(--paper-ink-red); }
+
+.divider {
+  width: 1px;
+  height: 24px;
+  background-color: var(--border-color);
+}
+
+.brush-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brush-slider-container input[type="range"] {
+  width: 80px;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+.brush-size-val {
+  font-size: 0.8rem;
+  font-family: var(--font-serif);
+  color: var(--text-secondary);
+  min-width: 40px;
+}
+
+/* ==========================================================================
+   Paper Voucher Styling ( Lined hybrid layout )
+   ========================================================================== */
+.paper-viewport {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.paper-voucher {
+  width: 580px;
+  height: 620px;
+  background-color: var(--paper-bg);
+  border-radius: 2px 2px 8px 8px;
+  box-shadow: 
+    0 20px 40px -15px rgba(0, 0, 0, 0.6),
+    0 0 1px 1px rgba(0, 0, 0, 0.05);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transform-origin: center center;
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+  user-select: none;
+}
+
+.perforation-edge {
+  height: 8px;
+  width: 100%;
+  background-image: radial-gradient(circle, var(--bg-dark) 3px, transparent 4px);
+  background-size: 12px 16px;
+  background-position: -2px -6px;
+  background-repeat: repeat-x;
+  border-bottom: 1px dashed rgba(15, 23, 42, 0.2);
+  position: relative;
+  z-index: 3;
+}
+
+/* Template layout */
+.voucher-template {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: rgba(15, 23, 42, 0.85);
+  font-family: var(--font-serif);
+  font-weight: 400;
+  justify-content: space-between;
+}
+
+.voucher-header {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 2px solid rgba(15, 23, 42, 0.8);
+  padding-bottom: 6px;
+}
+
+.voucher-title-block h2 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 1.35rem;
+  letter-spacing: 0.05em;
+  line-height: 1.1;
+}
+
+.voucher-title-block .tagline {
+  font-size: 0.55rem;
+  letter-spacing: 0.15em;
+  opacity: 0.7;
+}
+
+.voucher-number-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.voucher-number-block .field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+}
+
+.voucher-number-block .label {
+  opacity: 0.7;
+}
+
+.voucher-number-block .value {
+  font-weight: 700;
+}
+
+.date-picker-input {
+  border: none;
+  background: transparent;
+  border-bottom: 1.5px dotted rgba(15, 23, 42, 0.8);
+  font-family: var(--font-serif);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.85);
+  text-align: center;
+  outline: none;
+  width: 125px;
+  cursor: pointer;
+}
+
+/* Table Grid Structure */
+.voucher-table {
+  flex: 1;
+  margin: 12px 0;
+  border: 1.5px solid rgba(15, 23, 42, 0.75);
+  display: flex;
+  flex-direction: column;
+}
+
+.table-header {
+  display: flex;
+  font-weight: 700;
+  font-size: 0.65rem;
+  border-bottom: 1.5px solid rgba(15, 23, 42, 0.85);
+  background-color: rgba(15, 23, 42, 0.03);
+}
+
+.table-row {
+  display: flex;
+  flex: 1;
+  border-bottom: 1.5px solid rgba(15, 23, 42, 0.45);
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.table-row:focus-within {
+  background-color: rgba(251, 191, 36, 0.04);
+}
+
+.table-row:last-child {
+  border-bottom: none;
+}
+
+/* Columns formatting */
+.col {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  position: relative;
+  height: 100%;
+}
+
+.col-desc { 
+  flex: 1; 
+  border-right: 1.5px solid rgba(15, 23, 42, 0.5);
+  background-image: linear-gradient(rgba(59, 130, 246, 0.1) 1px, transparent 1px);
+  background-size: 100% 100%; /* Ruled line background */
+}
+
+.col-qty { 
+  width: 60px; 
+  border-right: 1.5px solid rgba(15, 23, 42, 0.5); 
+}
+
+.col-price { 
+  width: 90px; 
+  border-right: 1.5px solid rgba(15, 23, 42, 0.5); 
+}
+
+.col-amount { 
+  width: 100px; 
+}
+
+.table-header .col {
+  justify-content: center;
+  padding: 6px 4px;
+  letter-spacing: 0.05em;
+  font-weight: bold;
+}
+
+/* Canvases inside table rows */
+.row-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* Clear single canvas row button */
+.clear-row-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  background-color: rgba(15, 23, 42, 0.1);
+  color: rgba(15, 23, 42, 0.6);
+  border: none;
+  font-size: 13px;
+  font-weight: bold;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: var(--transition-smooth);
+}
+
+.col-desc:hover .clear-row-btn {
+  opacity: 1;
+}
+
+.clear-row-btn:hover {
+  background-color: rgba(15, 23, 42, 0.25);
+  color: rgba(15, 23, 42, 0.95);
+}
+
+/* Inputs styling inside receipt columns */
+.qty-input, .price-input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  font-family: var(--font-serif);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+  color: rgba(15, 23, 42, 0.85);
+  outline: none;
+  padding: 4px;
+  transition: var(--transition-smooth);
+}
+
+.qty-input:focus, .price-input:focus {
+  background-color: rgba(251, 191, 36, 0.08);
+}
+
+/* Hide input arrows */
+.qty-input::-webkit-outer-spin-button,
+.qty-input::-webkit-inner-spin-button,
+.price-input::-webkit-outer-spin-button,
+.price-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.qty-input[type=number], .price-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+/* Computed values */
+.amount-val {
+  font-weight: 700;
+  color: var(--paper-ink-blue);
+  font-family: var(--font-serif);
+  text-align: right;
+  width: 100%;
+  padding-right: 12px;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
+/* Hide zero amounts to keep the receipt clean */
+.amount-val.is-zero,
+.grand-total-val.is-zero {
+  visibility: hidden;
+}
+
+/* Voucher Footer layout */
+.voucher-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.signature-section {
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+}
+
+.signature-section .label {
+  font-size: 0.6rem;
+  opacity: 0.7;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.sig-canvas-container {
+  border: 1px dashed rgba(15, 23, 42, 0.25);
+  border-radius: 4px;
+  background-color: rgba(15, 23, 42, 0.01);
+  height: 52px;
+  position: relative;
+  overflow: hidden;
+}
+
+.sig-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.clear-sig-btn {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  z-index: 5;
+  background-color: rgba(15, 23, 42, 0.1);
+  color: rgba(15, 23, 42, 0.6);
+  border: none;
+  font-size: 11px;
+  font-weight: bold;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: var(--transition-smooth);
+}
+
+.sig-canvas-container:hover .clear-sig-btn {
+  opacity: 1;
+}
+
+.clear-sig-btn:hover {
+  background-color: rgba(15, 23, 42, 0.2);
+}
+
+.total-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.total-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.total-box {
+  width: 130px;
+  height: 38px;
+  border: 2px solid rgba(15, 23, 42, 0.85);
+  background-color: rgba(15, 23, 42, 0.01);
+  display: flex;
+  align-items: center;
+}
+
+.grand-total-val {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: rgba(15, 23, 42, 0.85);
+  text-align: right;
+  width: 100%;
+  padding-right: 12px;
+}
+
+/* Animations for voucher saves */
+.paper-voucher.rip-off {
+  animation: ripOffAnim 0.7s forwards cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.paper-voucher.slide-in {
+  animation: slideInAnim 0.6s forwards cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+@keyframes ripOffAnim {
+  0% {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
+  }
+  30% {
+    transform: translateY(-20px) rotate(-1deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-800px) rotate(-4deg);
+    opacity: 0;
+    box-shadow: 0 0px 0px rgba(0, 0, 0, 0);
+  }
+}
+
+@keyframes slideInAnim {
+  0% {
+    transform: translateY(600px) scale(0.95);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Bottom Action Footer & Buttons
+   ========================================================================== */
+.workspace-footer {
+  min-height: 80px;
+  padding: 12px 32px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-dark);
+  display: flex;
+  align-items: center;
+}
+
+/* Groups wrap as whole units (never mid-text) when the footer is narrower
+   than all three groups combined -- e.g. iPad portrait or a 1280px laptop. */
+.meta-controls {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.payment-method-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: nowrap;
+}
+
+.control-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.customer-info-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.customer-input {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  outline: none;
+  width: 140px;
+  min-width: 90px;
+  flex: 1 1 100px;
+}
+
+.customer-input:focus {
+  border-color: var(--color-accent);
+}
+
+.save-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+/* Segmented Control Selector */
+.segmented-control {
+  display: flex;
+  background-color: var(--bg-card);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.segmented-option {
+  position: relative;
+  cursor: pointer;
+}
+
+.segmented-option input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.segmented-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: var(--transition-smooth);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.mini-label {
+  padding: 5px 12px;
+  font-size: 0.75rem;
+}
+
+.segmented-option input:checked + .segmented-label {
+  background-color: var(--bg-darker);
+  color: var(--text-primary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.segmented-option:hover .segmented-label {
+  color: var(--text-primary);
+}
+
+/* Disabled layout items (e.g. colors disabled on eraser) */
+.tool-group.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-danger {
+  background-color: var(--color-danger);
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: var(--color-danger-hover);
+}
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: btn-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+.btn-secondary {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.btn-primary {
+  background-color: var(--color-success);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-success-hover);
+  transform: translateY(-1px);
+}
+
+.text-danger {
+  color: var(--color-danger);
+}
+
+.text-danger:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: var(--color-danger);
+}
+
+/* ==========================================================================
+   Overlay Modal Details
+   ========================================================================== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(11, 15, 25, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-card {
+  width: 580px; /* Wider modal to match printed voucher layout ratio */
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  transform: scale(0.95);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
+}
+
+.modal-overlay.active .modal-card {
+  transform: scale(1);
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title-info h3 {
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.modal-date {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.modal-customer {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.close-modal-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  transition: var(--transition-smooth);
+}
+
+.close-modal-btn:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.close-modal-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.modal-badge-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.voucher-preview-container {
+  width: 100%;
+  max-width: 500px;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  position: relative;
+  background-color: var(--paper-bg);
+}
+
+.voucher-preview-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.void-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-20deg);
+  border: 4px double var(--color-danger);
+  color: var(--color-danger);
+  font-family: var(--font-serif);
+  font-weight: 800;
+  font-size: 2.5rem;
+  padding: 6px 24px;
+  letter-spacing: 0.1em;
+  background-color: rgba(254, 249, 195, 0.95);
+  border-radius: 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  z-index: 10;
+}
+
+.voided .void-overlay {
+  opacity: 0.85;
+}
+
+.modal-footer {
+  padding: 20px 24px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-footer-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    position: absolute;
+    height: 100%;
+  }
+
+  /* Header is cramped on tablet widths -- drop the badge and collapse the
+     clear-action buttons to icon-only (their title attribute still gives a
+     tooltip/label) so everything fits on one row instead of overflowing. */
+  .workspace-header {
+    padding: 0 16px;
+  }
+
+  .header-logo .badge {
+    display: none;
+  }
+
+  .toggle-sidebar-btn span {
+    display: none;
+  }
+
+  #clear-drawings-btn .btn-label,
+  #clear-all-btn .btn-label {
+    display: none;
+  }
+
+  #clear-drawings-btn,
+  #clear-all-btn {
+    padding: 10px;
+  }
+
+  .top-controls {
+    gap: 8px;
+  }
+}
+
+/* ==========================================================================
+   Auth Screen
+   ========================================================================== */
+.auth-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-darker);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.auth-overlay[hidden] {
+  display: none;
+}
+
+.auth-card {
+  width: 360px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.auth-card-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-card-header h1 {
+  font-family: var(--font-serif);
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+}
+
+.auth-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  margin-top: 16px;
+}
+
+.auth-card input {
+  width: 100%;
+  background-color: var(--bg-darker);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  outline: none;
+  transition: var(--transition-smooth);
+}
+
+.auth-card input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.auth-error {
+  color: var(--color-danger);
+  font-size: 0.85rem;
+  margin-top: 12px;
+}
+
+.auth-submit-btn {
+  width: 100%;
+  margin-top: 20px;
+}
+
+/* ==========================================================================
+   Confirm Dialog (replaces window.confirm)
+   ========================================================================== */
+.confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(11, 15, 25, 0.8);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.confirm-overlay[hidden] {
+  display: none;
+}
+
+.confirm-card {
+  width: 380px;
+  max-width: calc(100vw - 48px);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.confirm-message {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: var(--space-xl);
+  white-space: pre-line;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+/* ==========================================================================
+   Toast Notifications (replaces window.alert for success/error feedback)
+   ========================================================================== */
+.toast-container {
+  position: fixed;
+  bottom: var(--space-xl);
+  right: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  z-index: 300;
+  max-width: 360px;
+}
+
+.toast {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast-success {
+  border-left-color: var(--color-success);
+}
+
+.toast-error {
+  border-left-color: var(--color-danger);
+}
+
+@media (max-width: 480px) {
+  .toast-container {
+    left: var(--space-lg);
+    right: var(--space-lg);
+    bottom: var(--space-lg);
+    max-width: none;
+  }
+}
