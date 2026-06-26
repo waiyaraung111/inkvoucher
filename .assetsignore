@@ -1,0 +1,9 @@
+supabase/
+*.md
+package.json
+package-lock.json
+build.js
+wrangler.jsonc
+.gitignore
+.git/
+node_modules/
