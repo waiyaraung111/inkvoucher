@@ -72,6 +72,20 @@ body {
   height: 100vh;
   overflow: hidden;
   display: flex;
+  /* This is a fast-paced staff tool, not a document to read -- an
+     accidental long-press anywhere shouldn't pop up Safari's
+     Copy/Look Up/Find Selection menu. Inputs explicitly opt back in
+     below, since you do want normal cursor/select/paste there. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .app-container {
