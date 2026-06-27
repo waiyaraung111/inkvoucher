@@ -69,7 +69,13 @@ body {
   font-family: var(--font-sans);
   background-color: var(--bg-darker);
   color: var(--text-primary);
+  /* 100vh sizes for the LARGEST possible viewport (Safari's chrome fully
+     hidden) -- when the tab bar/toolbar are visible, the real visible area
+     is shorter, and content (the footer) gets pushed below it. 100dvh
+     tracks Safari's actual current chrome state. Plain 100vh stays first
+     as a fallback for browsers that don't support dvh. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   /* This is a fast-paced staff tool, not a document to read -- an
@@ -92,6 +98,7 @@ textarea {
   display: flex;
   width: 100%;
   height: 100vh;
+  height: 100dvh;
   background-color: var(--bg-dark);
 }
 
@@ -1424,6 +1431,58 @@ textarea {
 
   .top-controls {
     gap: 8px;
+  }
+
+  /* Tighten the header, toolbar, canvas padding, and footer so the voucher
+     has more real room and the footer never gets squeezed against the
+     edge of the screen on tablet portrait. */
+  .workspace-header {
+    height: 52px;
+  }
+
+  .canvas-tools-bar {
+    padding: 6px 14px;
+    margin-bottom: 8px;
+    gap: 10px;
+  }
+
+  .tool-group {
+    gap: 8px;
+  }
+
+  .tool-label {
+    font-size: 0.65rem;
+  }
+
+  .brush-slider-container input[type="range"] {
+    width: 60px;
+  }
+
+  .canvas-section {
+    padding: 8px 12px;
+  }
+
+  .workspace-footer {
+    min-height: 56px;
+    padding: 8px 16px;
+  }
+
+  .meta-controls {
+    gap: 8px 14px;
+  }
+
+  .customer-input {
+    padding: 6px 10px;
+    width: 110px;
+  }
+
+  .segmented-label {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  .control-label {
+    font-size: 0.75rem;
   }
 }
 

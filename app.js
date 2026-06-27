@@ -1031,18 +1031,39 @@ async function handleSaveVoucher({ print = false } = {}) {
     });
     if (createError) throw createError;
 
-    const displayId = formatVoucherID(newVoucher.sequence_number);
+    // Payment Method and Payment Status are independent -- create_voucher
+    // only derives a default status from the method (patch_003), so a
+    // manually-chosen status that disagrees with that default needs a
+    // follow-up correction call using the same RPCs the ledger's Mark
+    // Paid/Unpaid buttons already use.
+    let finalVoucher = newVoucher;
+    const paymentStatusEl = document.querySelector('input[name="payment-status"]:checked');
+    const paymentStatus = paymentStatusEl ? paymentStatusEl.value : 'Unpaid';
+    if (paymentStatus !== newVoucher.payment_status) {
+      const correctionRpc = paymentStatus === 'Paid' ? 'mark_voucher_paid' : 'mark_voucher_unpaid';
+      const { data: corrected, error: statusError } = await supabaseClient.rpc(correctionRpc, { p_voucher_id: newVoucher.id });
+      if (statusError) {
+        // The voucher itself already saved successfully -- only the status
+        // correction failed, so don't treat this as a full save failure.
+        console.error('Error correcting payment status:', statusError);
+        showToast(`Voucher saved, but setting status to ${paymentStatus} failed -- fix it from the ledger.`, 'error');
+      } else {
+        finalVoucher = corrected;
+      }
+    }
 
-    currentVouchers.unshift(newVoucher);
-    nextSequenceNumber = newVoucher.sequence_number + 1;
-    if (matchesCurrentFilters(newVoucher)) {
+    const displayId = formatVoucherID(finalVoucher.sequence_number);
+
+    currentVouchers.unshift(finalVoucher);
+    nextSequenceNumber = finalVoucher.sequence_number + 1;
+    if (matchesCurrentFilters(finalVoucher)) {
       renderVoucherList(currentVouchers);
     } else {
       updateResultCount();
     }
 
     if (print) {
-      await printVoucher(newVoucher);
+      await printVoucher(finalVoucher);
       showToast(`Voucher ${displayId} saved and sent to print.`, 'success');
     } else {
       showToast(`Voucher ${displayId} saved.`, 'success');
@@ -1324,15 +1345,25 @@ brushSizeSlider.addEventListener('input', (e) => {
 function scaleVoucherToFit() {
   const viewport = document.querySelector('.paper-viewport');
   const voucher = document.getElementById('paper-voucher');
-  if (!viewport || !voucher) return;
+  const header = document.querySelector('.workspace-header');
+  const footer = document.querySelector('.workspace-footer');
+  const toolsBar = document.querySelector('.canvas-tools-bar');
+  const section = document.querySelector('.canvas-section');
+  if (!viewport || !voucher || !header || !footer || !toolsBar || !section) return;
 
-  // viewport.clientHeight is .paper-viewport's own flex-laid-out height,
-  // which already excludes the tools bar above it (a sibling, not a child) --
-  // subtracting the tools bar's height again here was double-counting it
-  // and made the voucher render noticeably smaller than the space actually
-  // available.
+  const sectionStyle = getComputedStyle(section);
+  const sectionPaddingY = parseFloat(sectionStyle.paddingTop) + parseFloat(sectionStyle.paddingBottom);
+  const toolsBarMarginBottom = parseFloat(getComputedStyle(toolsBar).marginBottom) || 0;
+
+  // Explicitly reserve space for the header, footer, and toolbar before
+  // deciding how big the voucher can be -- measuring window.innerHeight
+  // directly rather than only trusting the flex cascade. On iOS Safari the
+  // real visible height shrinks while the chrome (tab bar/toolbar) is
+  // showing, so the footer needs a hard guarantee of its own space rather
+  // than just whatever's left over.
+  const reservedHeight = header.offsetHeight + footer.offsetHeight + toolsBar.offsetHeight + toolsBarMarginBottom + sectionPaddingY;
+  const availableHeight = window.innerHeight - reservedHeight - 16;
   const availableWidth = viewport.clientWidth - 32;
-  const availableHeight = viewport.clientHeight - 16;
 
   const voucherWidth = 580;
   const voucherHeight = 620;
@@ -1341,8 +1372,9 @@ function scaleVoucherToFit() {
   const scaleY = availableHeight / voucherHeight;
   // Allow growing past natural size so the voucher fills the screen on
   // tablets/desktops with room to spare, capped so it doesn't look oversized
-  // on a large monitor.
-  const scale = Math.min(scaleX, scaleY, 1.4);
+  // on a large monitor. Floored so a transient layout glitch can't shrink
+  // it to nothing.
+  const scale = Math.max(Math.min(scaleX, scaleY, 1.4), 0.3);
 
   voucher.style.transform = `scale(${scale})`;
 }
