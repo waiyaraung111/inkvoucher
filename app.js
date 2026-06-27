@@ -13,6 +13,12 @@ let companySettings = null;
 
 // Drawing states
 let isDrawing = false;
+// Dedicated lock for scaleVoucherToFit() -- true for the entire span of a
+// pointerdown-to-pointerup/pointercancel stroke (not pointerleave, which
+// isDrawing also reacts to). scaleVoucherToFit() itself refuses to run
+// while this is true, no matter which event path called it.
+let isDrawingActive = false;
+let pendingRescale = false; // a rescale was requested mid-stroke -- run it once isDrawingActive clears
 let lastStrokeEndTime = 0; // Date.now() of the last pointerup/pointerleave -- see handleResize()
 let lastX = 0;
 let lastY = 0;
@@ -391,6 +397,7 @@ function startDrawing(e) {
   if (!context) return;
 
   isDrawing = true;
+  isDrawingActive = true;
   const rect = currentCanvas.getBoundingClientRect();
   const clientX = e.clientX || (e.touches && e.touches[0].clientX);
   const clientY = e.clientY || (e.touches && e.touches[0].clientY);
@@ -434,8 +441,13 @@ function draw(e) {
 
 function stopDrawing() {
   isDrawing = false;
+  isDrawingActive = false;
   currentStroke = null;
   lastStrokeEndTime = Date.now();
+  if (pendingRescale) {
+    pendingRescale = false;
+    handleResize(); // re-arms the debounce/quiet-period before actually applying it
+  }
 }
 
 // Assembles the recorded strokes into the vector source-of-truth stored
@@ -458,6 +470,11 @@ function setupCanvasListeners() {
     canvasElement.addEventListener('pointermove', draw);
     canvasElement.addEventListener('pointerup', stopDrawing);
     canvasElement.addEventListener('pointerleave', stopDrawing);
+    // pointercancel fires when the browser/OS hijacks the touch for its own
+    // gesture (e.g. starts treating it as a pinch) -- without this, isDrawing
+    // and the scale lock could get stuck on, since stopDrawing() would never
+    // otherwise run for that stroke.
+    canvasElement.addEventListener('pointercancel', stopDrawing);
   });
 
   // Safari's pinch-zoom gesture is a legacy WebKit-only event that bypasses
@@ -1354,6 +1371,14 @@ brushSizeSlider.addEventListener('input', (e) => {
 
 // Scale voucher element to fit inside the paper viewport dynamically
 function scaleVoucherToFit() {
+  // Hard lock, independent of whichever event path called this -- the
+  // voucher's transform must never change mid-stroke. Whoever called us
+  // gets the rescale once the stroke ends instead (see stopDrawing()).
+  if (isDrawingActive) {
+    pendingRescale = true;
+    return;
+  }
+
   const viewport = document.querySelector('.paper-viewport');
   const voucher = document.getElementById('paper-voucher');
   const header = document.querySelector('.workspace-header');
@@ -1419,6 +1444,13 @@ function handleResize() {
   }, 350);
 }
 window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', handleResize);
+// iOS Safari's dynamic toolbar show/hide sometimes only changes
+// visualViewport.height, without firing a plain window 'resize' -- route it
+// through the same debounced/locked path rather than leaving it unhandled.
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', handleResize);
+}
 
 // Global actions
 clearDrawingsBtn.addEventListener('click', async () => {
