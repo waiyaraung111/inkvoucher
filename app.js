@@ -1669,6 +1669,33 @@ brushSizeSlider.addEventListener('input', (e) => {
   updateAllCanvasSettings();
 });
 
+// Keyboard-aware scaling, kept separate from Pencil/drawing scaling: a
+// text/number input bringing up the on-screen keyboard is a deliberate,
+// useful reason to prefer visualViewport.height (which shrinks with the
+// keyboard) over window.innerHeight (which doesn't). At every other time
+// -- including while drawing -- window.innerHeight is the more stable
+// source. visualViewport fires far more readily during ordinary touch/
+// Pencil interaction than plain window resize does, which is what made
+// the voucher visibly zoom in/out while writing; using it unconditionally
+// as the only height source was the regression.
+let isTextInputFocused = false;
+function isKeyboardInput(el) {
+  if (!el) return false;
+  if (el.tagName === 'TEXTAREA') return true;
+  if (el.tagName !== 'INPUT') return false;
+  return ['text', 'number', 'tel', 'search', 'email', 'password'].includes((el.type || 'text').toLowerCase());
+}
+document.addEventListener('focusin', (e) => {
+  if (isKeyboardInput(e.target)) isTextInputFocused = true;
+});
+document.addEventListener('focusout', (e) => {
+  if (isKeyboardInput(e.target)) isTextInputFocused = false;
+});
+
+function getEffectiveViewportHeight() {
+  return (isTextInputFocused && window.visualViewport) ? window.visualViewport.height : window.innerHeight;
+}
+
 // Scale voucher element to fit inside the paper viewport dynamically
 function scaleVoucherToFit() {
   // Hard lock, independent of whichever event path called this -- the
@@ -1692,25 +1719,38 @@ function scaleVoucherToFit() {
   const toolsBarMarginBottom = parseFloat(getComputedStyle(toolsBar).marginBottom) || 0;
 
   // Explicitly reserve space for the header, footer, and toolbar before
-  // deciding how big the voucher can be -- measuring window.innerHeight
-  // directly rather than only trusting the flex cascade. On iOS Safari the
-  // real visible height shrinks while the chrome (tab bar/toolbar) is
-  // showing, so the footer needs a hard guarantee of its own space rather
-  // than just whatever's left over.
+  // deciding how big the voucher can be, rather than only trusting the flex
+  // cascade. header/footer's own padding already includes
+  // env(safe-area-inset-top)/env(safe-area-inset-bottom) (see index.css),
+  // so reserving their offsetHeight here already accounts for the safe
+  // area too -- no separate safe-area term needed.
   const reservedHeight = header.offsetHeight + footer.offsetHeight + toolsBar.offsetHeight + toolsBarMarginBottom + sectionPaddingY;
-  const availableHeight = window.innerHeight - reservedHeight - 16;
-  const availableWidth = viewport.clientWidth - 32;
 
-  const voucherWidth = 580;
-  const voucherHeight = 620;
+  const viewportHeight = getEffectiveViewportHeight();
+
+  const verticalMargin = 16;
+  const horizontalMargin = 32;
+  const availableHeight = viewportHeight - reservedHeight - verticalMargin;
+  const availableWidth = viewport.clientWidth - horizontalMargin;
+
+  // The voucher's real, unscaled size read directly from the element
+  // (transform doesn't affect offsetWidth/offsetHeight) instead of
+  // duplicating its CSS dimensions as separate constants -- so the aspect
+  // ratio preserved below can never drift out of sync with the actual
+  // .paper-voucher width/height in index.css.
+  const voucherWidth = voucher.offsetWidth;
+  const voucherHeight = voucher.offsetHeight;
+  if (!voucherWidth || !voucherHeight) return; // not laid out yet (e.g. before first paint)
 
   const scaleX = availableWidth / voucherWidth;
   const scaleY = availableHeight / voucherHeight;
   // Allow growing past natural size so the voucher fills the screen on
   // tablets/desktops with room to spare, capped so it doesn't look oversized
-  // on a large monitor. Floored so a transient layout glitch can't shrink
-  // it to nothing.
-  const scale = Math.max(Math.min(scaleX, scaleY, 1.4), 0.3);
+  // on a large monitor. The floor only guards against a transient 0/negative
+  // read (e.g. before layout settles) collapsing it to nothing -- real
+  // tablet widths, including iPad Split View, never get remotely close to
+  // it, so it can't itself cause the overflow this is meant to prevent.
+  const scale = Math.max(Math.min(scaleX, scaleY, 1.4), 0.05);
 
   voucher.style.transform = `scale(${scale})`;
 }
@@ -1719,29 +1759,53 @@ function scaleVoucherToFit() {
 // On iOS Safari, the chrome bar collapsing/expanding during a touch
 // interaction also fires 'resize' -- running the full rescale mid-stroke
 // would wipe/redraw every canvas and visibly disrupt the line being drawn.
-// Debounced, and re-checks isDrawing when its timer fires so it keeps
-// rescheduling itself instead of cutting in on an active stroke.
 //
-// Handwriting lifts the pencil between every letter, so isDrawing alone
-// goes false for brief instants throughout an entire writing session --
-// a resize from the chrome bar hiding could land in exactly one of those
-// gaps and still rescale the voucher mid-sentence. RESCALE_QUIET_MS makes
-// it also wait for a real pause (longer than a letter-to-letter gap) since
-// the last stroke ended before committing to a rescale.
+// Handwriting lifts the pencil between every letter, so isDrawingActive
+// alone goes false for brief instants throughout an entire writing
+// session -- a resize landing in exactly one of those gaps could still
+// rescale the voucher mid-sentence. RESCALE_QUIET_MS makes it also wait
+// for a real pause (longer than a letter-to-letter gap) since the last
+// stroke ended before committing to a rescale.
 let resizeDebounceTimer = null;
+let lastStableViewportHeight = null;
 const RESCALE_QUIET_MS = 600;
+const RESIZE_DEBOUNCE_MS = 350;
 function handleResize() {
+  // Ignore entirely while a stroke is active, rather than repeatedly
+  // re-arming a debounce timer that visualViewport noise (or just ordinary
+  // Pencil/touch interaction) can keep resetting before it ever fires.
+  // stopDrawing() triggers one fresh check once the stroke actually ends.
+  if (isDrawingActive) {
+    pendingRescale = true;
+    return;
+  }
+
   clearTimeout(resizeDebounceTimer);
   resizeDebounceTimer = setTimeout(() => {
     if (appContainer.hidden) return; // not logged in yet -- canvases are zero-size behind the auth screen
-    if (isDrawing || Date.now() - lastStrokeEndTime < RESCALE_QUIET_MS) {
+    if (isDrawingActive || Date.now() - lastStrokeEndTime < RESCALE_QUIET_MS) {
       handleResize();
       return;
     }
+
+    // Only commit once the height has stopped changing between two checks
+    // a full debounce window apart. A single quiet period isn't enough on
+    // its own -- visualViewport in particular can report several different
+    // transient values in quick succession while Safari's chrome bar or
+    // the keyboard is still animating, and committing to one of those mid-
+    // animation is what made the voucher appear to zoom rather than settle.
+    const currentHeight = getEffectiveViewportHeight();
+    if (lastStableViewportHeight !== null && Math.abs(currentHeight - lastStableViewportHeight) > 1) {
+      lastStableViewportHeight = currentHeight;
+      handleResize();
+      return;
+    }
+    lastStableViewportHeight = currentHeight;
+
     syncSidebarForViewport();
     scaleVoucherToFit();
     resizeAndScaleCanvases();
-  }, 350);
+  }, RESIZE_DEBOUNCE_MS);
 }
 window.addEventListener('resize', handleResize);
 window.addEventListener('orientationchange', handleResize);
