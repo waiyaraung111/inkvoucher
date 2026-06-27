@@ -94,6 +94,27 @@ const markPaidBtn = document.getElementById('mark-paid-btn');
 const markUnpaidBtn = document.getElementById('mark-unpaid-btn');
 const printBtn = document.getElementById('print-btn');
 
+// Dashboard Elements
+const openDashboardBtn = document.getElementById('open-dashboard-btn');
+const dashboardModal = document.getElementById('dashboard-modal');
+const closeDashboardBtn = document.getElementById('close-dashboard-btn');
+const dashboardRangeControl = document.getElementById('dashboard-range-control');
+const dashboardCustomRange = document.getElementById('dashboard-custom-range');
+const dashboardDateFrom = document.getElementById('dashboard-date-from');
+const dashboardDateTo = document.getElementById('dashboard-date-to');
+const dashboardCustomApplyBtn = document.getElementById('dashboard-custom-apply-btn');
+const dashboardLoading = document.getElementById('dashboard-loading');
+const dashboardContent = document.getElementById('dashboard-content');
+const dashTotalVouchers = document.getElementById('dash-total-vouchers');
+const dashTotalAmount = document.getElementById('dash-total-amount');
+const dashPaidAmount = document.getElementById('dash-paid-amount');
+const dashUnpaidAmount = document.getElementById('dash-unpaid-amount');
+const dashboardMethodGrid = document.getElementById('dashboard-method-grid');
+const dashHighestVoucher = document.getElementById('dash-highest-voucher');
+const dashAverageVoucher = document.getElementById('dash-average-voucher');
+const dashLatestVoucher = document.getElementById('dash-latest-voucher');
+const dashboardOutstandingList = document.getElementById('dashboard-outstanding-list');
+
 // --- Supabase Data Access ---
 
 // Maps a status filter chip to the search_vouchers params that implement it.
@@ -149,6 +170,163 @@ function describeRpcError(error) {
   if (error.code === 'P0002') return 'Voucher not found.';
   if (error.code === '28000') return 'You need to be logged in to do that.';
   return error.message || 'Something went wrong.';
+}
+
+// --- Dashboard ---
+
+const fmtMoney = (n) => '$' + Number(n || 0).toFixed(2);
+
+// Local (not UTC) yyyy-mm-dd, matching loadCurrentDate() -- toISOString()
+// would shift the date near midnight in timezones ahead of UTC.
+function toLocalISODate(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Returns {from, to} for a preset, or null for 'custom' (caller reads the
+// date inputs directly instead). "This Week" starts Monday; both week and
+// month presets run through today, not the literal end of the period.
+function getDashboardRangeDates(preset) {
+  const today = new Date();
+  if (preset === 'today') {
+    const d = toLocalISODate(today);
+    return { from: d, to: d };
+  }
+  if (preset === 'yesterday') {
+    const y = new Date(today);
+    y.setDate(y.getDate() - 1);
+    const d = toLocalISODate(y);
+    return { from: d, to: d };
+  }
+  if (preset === 'week') {
+    const dow = today.getDay(); // 0 = Sunday .. 6 = Saturday
+    const diffToMonday = dow === 0 ? 6 : dow - 1;
+    const monday = new Date(today);
+    monday.setDate(monday.getDate() - diffToMonday);
+    return { from: toLocalISODate(monday), to: toLocalISODate(today) };
+  }
+  if (preset === 'month') {
+    const first = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { from: toLocalISODate(first), to: toLocalISODate(today) };
+  }
+  return null;
+}
+
+// Sane starting point for the custom-range inputs so switching to "Custom"
+// doesn't present two empty date fields.
+dashboardDateFrom.value = toLocalISODate(new Date());
+dashboardDateTo.value = toLocalISODate(new Date());
+
+function openDashboard() {
+  dashboardModal.classList.add('active');
+  loadDashboard();
+}
+
+function closeDashboard() {
+  dashboardModal.classList.remove('active');
+}
+
+async function loadDashboard() {
+  const preset = dashboardRangeControl.querySelector('input[name="dashboard-range"]:checked').value;
+  let range;
+  if (preset === 'custom') {
+    if (!dashboardDateFrom.value || !dashboardDateTo.value) return; // wait for both custom dates
+    range = { from: dashboardDateFrom.value, to: dashboardDateTo.value };
+  } else {
+    range = getDashboardRangeDates(preset);
+  }
+
+  dashboardLoading.hidden = false;
+  dashboardContent.hidden = true;
+
+  const { data, error } = await supabaseClient.rpc('get_dashboard_summary', {
+    p_date_from: range.from,
+    p_date_to: range.to,
+  });
+
+  dashboardLoading.hidden = true;
+  dashboardContent.hidden = false;
+
+  if (error) {
+    console.error('Failed to load dashboard:', error);
+    showToast('Failed to load dashboard: ' + describeRpcError(error), 'error');
+    return;
+  }
+  renderDashboardData(data);
+}
+
+function renderDashboardData(data) {
+  const summary = data.summary || {};
+  dashTotalVouchers.textContent = summary.total_vouchers || 0;
+  dashTotalAmount.textContent = fmtMoney(summary.total_amount);
+  dashPaidAmount.textContent = fmtMoney(summary.paid_amount);
+  dashUnpaidAmount.textContent = fmtMoney(summary.unpaid_amount);
+
+  const byMethod = new Map((data.payment_breakdown || []).map((m) => [m.payment_method, m]));
+  dashboardMethodGrid.innerHTML = ['Cash', 'Transfer', 'PayNow'].map((method) => {
+    const m = byMethod.get(method) || { voucher_count: 0, amount: 0 };
+    return `
+      <div class="dashboard-method-card">
+        <span class="dashboard-card-label">${method}</span>
+        <span class="dashboard-card-value">${fmtMoney(m.amount)}</span>
+        <span class="dashboard-outstanding-count">${m.voucher_count} voucher${m.voucher_count === 1 ? '' : 's'}</span>
+      </div>
+    `;
+  }).join('');
+
+  const highest = data.highest_voucher;
+  dashHighestVoucher.textContent = highest
+    ? `${formatVoucherID(highest.sequence_number)} -- ${fmtMoney(highest.total_amount)}`
+    : '--';
+
+  dashAverageVoucher.textContent = summary.total_vouchers ? fmtMoney(summary.average_amount) : '--';
+
+  const latest = data.latest_voucher;
+  dashLatestVoucher.textContent = latest
+    ? `${formatVoucherID(latest.sequence_number)} -- ${latest.customer_name}`
+    : '--';
+
+  const outstanding = data.outstanding_customers || [];
+  dashboardOutstandingList.innerHTML = outstanding.length
+    ? outstanding.map((c) => `
+        <div class="dashboard-outstanding-row" data-name="${escapeHtml(c.customer_name)}" data-phone="${escapeHtml(c.customer_phone || '')}">
+          <div>
+            <span class="dashboard-outstanding-name">${escapeHtml(c.customer_name)}</span>
+            ${c.customer_phone ? `<span class="dashboard-outstanding-phone">${escapeHtml(c.customer_phone)}</span>` : ''}
+          </div>
+          <div class="dashboard-outstanding-meta">
+            <span class="dashboard-outstanding-amount">${fmtMoney(c.outstanding_amount)}</span>
+            <span class="dashboard-outstanding-count">${c.voucher_count} voucher${c.voucher_count === 1 ? '' : 's'}</span>
+          </div>
+        </div>
+      `).join('')
+    : '<div class="dashboard-empty-row">No outstanding vouchers.</div>';
+}
+
+// Closes the dashboard and re-runs the existing server-side ledger search
+// filtered to this one customer, reusing the same currentSearchQuery/
+// currentStatusFilter mechanism the search box and filter chips already
+// drive -- no separate filtering path needed.
+function jumpToCustomerLedger(customerName, customerPhone) {
+  closeDashboard();
+
+  currentStatusFilter = 'unpaid';
+  filterChipRow.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+  const unpaidChip = filterChipRow.querySelector('.filter-chip[data-filter="unpaid"]');
+  if (unpaidChip) unpaidChip.classList.add('active');
+
+  currentSearchQuery = (customerPhone || customerName || '').toLowerCase().trim();
+  searchInput.value = customerPhone || customerName || '';
+  searchClearBtn.hidden = !currentSearchQuery;
+
+  if (window.innerWidth <= SIDEBAR_BREAKPOINT) {
+    sidebar.classList.remove('collapsed');
+    showSidebarBtn.style.display = 'none';
+  }
+
+  reloadVouchers();
 }
 
 async function getSignedImageUrl(path) {
@@ -1479,6 +1657,22 @@ downloadBtn.addEventListener('click', handleDownloadActiveVoucher);
 markPaidBtn.addEventListener('click', handleMarkPaid);
 markUnpaidBtn.addEventListener('click', handleMarkUnpaid);
 printBtn.addEventListener('click', handlePrintActiveVoucher);
+
+// Dashboard
+openDashboardBtn.addEventListener('click', openDashboard);
+closeDashboardBtn.addEventListener('click', closeDashboard);
+dashboardRangeControl.addEventListener('change', (e) => {
+  if (e.target.name !== 'dashboard-range') return;
+  const isCustom = e.target.value === 'custom';
+  dashboardCustomRange.hidden = !isCustom;
+  if (!isCustom) loadDashboard();
+});
+dashboardCustomApplyBtn.addEventListener('click', loadDashboard);
+dashboardOutstandingList.addEventListener('click', (e) => {
+  const row = e.target.closest('.dashboard-outstanding-row');
+  if (!row) return;
+  jumpToCustomerLedger(row.dataset.name, row.dataset.phone);
+});
 
 // Sidebar toggles
 hideSidebarBtn.addEventListener('click', () => {

@@ -83,6 +83,11 @@
             <span class="btn-label">Clear Entire Voucher</span>
           </button>
           <div class="divider"></div>
+          <button class="btn btn-secondary" id="open-dashboard-btn" title="View daily summary dashboard">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <span class="btn-label">Dashboard</span>
+          </button>
+          <div class="divider"></div>
           <button class="btn btn-secondary" id="logout-btn" title="Log out">
             <span class="btn-label">Log Out</span>
           </button>
@@ -415,6 +420,107 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Download
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard Overlay Modal -->
+    <div class="modal-overlay" id="dashboard-modal">
+      <div class="modal-card dashboard-card">
+        <div class="modal-header">
+          <div class="modal-title-info">
+            <h3>Dashboard</h3>
+          </div>
+          <button class="close-modal-btn" id="close-dashboard-btn" title="Close Dashboard">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+
+        <div class="modal-body dashboard-body">
+          <div class="dashboard-range-row">
+            <div class="segmented-control" id="dashboard-range-control">
+              <label class="segmented-option">
+                <input type="radio" name="dashboard-range" value="today" checked>
+                <span class="segmented-label">Today</span>
+              </label>
+              <label class="segmented-option">
+                <input type="radio" name="dashboard-range" value="yesterday">
+                <span class="segmented-label">Yesterday</span>
+              </label>
+              <label class="segmented-option">
+                <input type="radio" name="dashboard-range" value="week">
+                <span class="segmented-label">This Week</span>
+              </label>
+              <label class="segmented-option">
+                <input type="radio" name="dashboard-range" value="month">
+                <span class="segmented-label">This Month</span>
+              </label>
+              <label class="segmented-option">
+                <input type="radio" name="dashboard-range" value="custom">
+                <span class="segmented-label">Custom</span>
+              </label>
+            </div>
+            <div class="dashboard-custom-range" id="dashboard-custom-range" hidden>
+              <input type="date" id="dashboard-date-from">
+              <span>to</span>
+              <input type="date" id="dashboard-date-to">
+              <button class="btn btn-secondary" id="dashboard-custom-apply-btn">Apply</button>
+            </div>
+          </div>
+
+          <div class="dashboard-loading" id="dashboard-loading" hidden>Loading…</div>
+
+          <div class="dashboard-content" id="dashboard-content">
+            <div class="dashboard-summary-grid">
+              <div class="dashboard-stat-card">
+                <span class="dashboard-card-label">Total Vouchers</span>
+                <span class="dashboard-card-value" id="dash-total-vouchers">0</span>
+              </div>
+              <div class="dashboard-stat-card">
+                <span class="dashboard-card-label">Total Sales</span>
+                <span class="dashboard-card-value" id="dash-total-amount">$0.00</span>
+              </div>
+              <div class="dashboard-stat-card is-paid">
+                <span class="dashboard-card-label">Paid</span>
+                <span class="dashboard-card-value" id="dash-paid-amount">$0.00</span>
+              </div>
+              <div class="dashboard-stat-card is-unpaid">
+                <span class="dashboard-card-label">Unpaid / Outstanding</span>
+                <span class="dashboard-card-value" id="dash-unpaid-amount">$0.00</span>
+              </div>
+            </div>
+
+            <div class="dashboard-section">
+              <h4 class="dashboard-section-title">Payment Method Breakdown</h4>
+              <div class="dashboard-method-grid" id="dashboard-method-grid"></div>
+            </div>
+
+            <div class="dashboard-section">
+              <h4 class="dashboard-section-title">Quick Stats</h4>
+              <div class="dashboard-stats-row">
+                <div class="dashboard-stat">
+                  <span class="dashboard-card-label">Highest Voucher</span>
+                  <span class="dashboard-card-value" id="dash-highest-voucher">--</span>
+                </div>
+                <div class="dashboard-stat">
+                  <span class="dashboard-card-label">Average Voucher</span>
+                  <span class="dashboard-card-value" id="dash-average-voucher">--</span>
+                </div>
+                <div class="dashboard-stat">
+                  <span class="dashboard-card-label">Latest Voucher</span>
+                  <span class="dashboard-card-value" id="dash-latest-voucher">--</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="dashboard-section">
+              <h4 class="dashboard-section-title">
+                Outstanding Customers
+                <span class="dashboard-section-hint">(all time -- not limited to the range above)</span>
+              </h4>
+              <div class="dashboard-outstanding-list" id="dashboard-outstanding-list"></div>
+            </div>
           </div>
         </div>
       </div>

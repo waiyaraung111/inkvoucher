@@ -1424,6 +1424,190 @@ textarea {
   gap: 10px;
 }
 
+/* ==========================================================================
+   Dashboard
+   ========================================================================== */
+.dashboard-card {
+  /* Wider than the voucher detail modal (grid content needs the room), but
+     capped to a fraction of the viewport so it still fits iPad portrait
+     (768px) with margin to spare, unlike the detail modal's fixed 580px. */
+  width: min(720px, 92vw);
+}
+
+.dashboard-body {
+  align-items: stretch;
+}
+
+.dashboard-range-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.dashboard-custom-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.dashboard-custom-range input[type="date"] {
+  background-color: var(--bg-darker);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-family: var(--font-sans);
+}
+
+.dashboard-loading {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 32px 0;
+}
+
+.dashboard-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.dashboard-content[hidden] {
+  display: none;
+}
+
+.dashboard-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.dashboard-stat-card,
+.dashboard-stat,
+.dashboard-method-card {
+  background-color: var(--bg-darker);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dashboard-stat-card.is-paid {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.dashboard-stat-card.is-unpaid {
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.dashboard-card-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-card-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-family: var(--font-serif);
+}
+
+.dashboard-section-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dashboard-section-hint {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.dashboard-method-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.dashboard-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.dashboard-stat .dashboard-card-value {
+  font-size: 0.95rem;
+}
+
+.dashboard-outstanding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.dashboard-outstanding-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bg-darker);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.dashboard-outstanding-row:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.dashboard-outstanding-name {
+  font-weight: 600;
+}
+
+.dashboard-outstanding-phone {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-left: 8px;
+}
+
+.dashboard-outstanding-meta {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-outstanding-amount {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  color: var(--color-warning);
+}
+
+.dashboard-outstanding-count {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.dashboard-empty-row {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 16px 0;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     position: absolute;
@@ -1511,6 +1695,14 @@ textarea {
 
   .control-label {
     font-size: 0.75rem;
+  }
+
+  /* 4 stat cards and 3 method/stat cards per row are too cramped on iPad
+     portrait -- drop to 2 columns so labels and values stay readable. */
+  .dashboard-summary-grid,
+  .dashboard-method-grid,
+  .dashboard-stats-row {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
