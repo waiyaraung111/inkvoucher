@@ -1383,9 +1383,18 @@ async function handleMarkUnpaid() {
 // A dedicated print page rather than just opening the raw stored image --
 // gives it proper page margins and centers it like an actual document
 // instead of however the browser happens to render a bare image.
+// Payment/void status can change after the voucher's PNG was rendered
+// (mark paid/unpaid, void) -- the saved image itself is never regenerated,
+// so the status shown on a printout must come from an overlay reflecting
+// the voucher's CURRENT row, the same way the on-screen modal's status
+// pill already does via getStatusBadgeInfo(). Void and Paid/Unpaid are
+// mutually exclusive here (matching that function's behavior everywhere
+// else in the app) so a voided voucher always shows VOID alone, never a
+// competing payment badge.
 function buildPrintHtml(imageUrl, voucher) {
   const displayId = formatVoucherID(voucher.sequence_number);
   const printedAt = new Date().toLocaleString();
+  const status = getStatusBadgeInfo(voucher);
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -1404,9 +1413,14 @@ function buildPrintHtml(imageUrl, voucher) {
     flex-direction: column;
     align-items: center;
   }
-  img {
+  .print-img-wrap {
+    position: relative;
     width: 100%;
     max-width: 760px;
+  }
+  img {
+    display: block;
+    width: 100%;
     height: auto;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
@@ -1417,11 +1431,62 @@ function buildPrintHtml(imageUrl, voucher) {
     color: #888;
     text-align: center;
   }
+  /* Anchored near the Total Amount box (drawn at roughly 73-96% of the
+     image width, 83-89% of its height) -- see renderCompositeVoucher(). */
+  .print-status-badge {
+    position: absolute;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    pointer-events: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-status-badge.is-void {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-20deg);
+    border: 4px double #dc2626;
+    color: #dc2626;
+    font-size: 2.4rem;
+    padding: 6px 26px;
+    border-radius: 4px;
+    background-color: rgba(254, 249, 195, 0.92);
+  }
+  /* Paid: a confirmation stamp -- rotated, double-bordered, ink-on-paper
+     look, like a real rubber "PAID" stamp. */
+  .print-status-badge.is-paid {
+    top: 78%;
+    right: 5%;
+    transform: rotate(-10deg);
+    border: 3px double #059669;
+    color: #059669;
+    font-size: 1.15rem;
+    padding: 4px 16px;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.6);
+  }
+  /* Unpaid: an outstanding/due indicator, not a stamp -- flat, filled,
+     unrotated, so it reads as an alert rather than a certification. */
+  .print-status-badge.is-unpaid {
+    top: 78%;
+    right: 5%;
+    border: 2px solid #b45309;
+    color: #ffffff;
+    background-color: #d97706;
+    font-size: 1rem;
+    padding: 4px 14px;
+    border-radius: 4px;
+  }
 </style>
 </head>
 <body>
   <div class="print-page">
-    <img src="${imageUrl}" alt="Voucher ${displayId}">
+    <div class="print-img-wrap">
+      <img src="${imageUrl}" alt="Voucher ${displayId}">
+      <div class="print-status-badge ${status.className}">${status.label}</div>
+    </div>
     <div class="print-footer">Printed ${printedAt}</div>
   </div>
 </body>
