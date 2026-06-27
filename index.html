@@ -46,6 +46,30 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
+      <div class="date-filter-row">
+        <select class="date-filter-select" id="ledger-date-filter" title="Filter ledger by date">
+          <option value="all">All Dates</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="week">This Week</option>
+          <option value="month">This Month</option>
+          <option value="custom">Custom Range</option>
+        </select>
+        <button class="date-filter-clear-btn" id="ledger-date-clear-btn" title="Clear date filter" hidden>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="date-filter-custom-row" id="ledger-date-custom-row" hidden>
+        <div class="date-filter-custom-field">
+          <label for="ledger-date-from">From</label>
+          <input type="date" id="ledger-date-from">
+        </div>
+        <div class="date-filter-custom-field">
+          <label for="ledger-date-to">To</label>
+          <input type="date" id="ledger-date-to">
+        </div>
+        <button class="date-filter-apply-btn" id="ledger-date-apply-btn">Apply</button>
+      </div>
       <div class="filter-chip-row" id="filter-chip-row">
         <button class="filter-chip active" data-filter="all">All</button>
         <button class="filter-chip" data-filter="active">Active</button>

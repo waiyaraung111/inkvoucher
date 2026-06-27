@@ -8,6 +8,7 @@ let activeVoucher = null;
 let nextSequenceNumber = 1;
 let currentSearchQuery = '';
 let currentStatusFilter = 'all'; // all | active | paid | unpaid | void
+let currentDateRange = null; // null = All Dates, else {from, to} yyyy-mm-dd -- Ledger History's own date filter, independent of the Dashboard's
 let isSaving = false;
 let companySettings = null;
 
@@ -58,6 +59,12 @@ const searchInput = document.getElementById('search-input');
 const searchClearBtn = document.getElementById('search-clear-btn');
 const filterChipRow = document.getElementById('filter-chip-row');
 const resultCountEl = document.getElementById('result-count');
+const ledgerDateFilter = document.getElementById('ledger-date-filter');
+const ledgerDateClearBtn = document.getElementById('ledger-date-clear-btn');
+const ledgerDateCustomRow = document.getElementById('ledger-date-custom-row');
+const ledgerDateFrom = document.getElementById('ledger-date-from');
+const ledgerDateTo = document.getElementById('ledger-date-to');
+const ledgerDateApplyBtn = document.getElementById('ledger-date-apply-btn');
 const customerNameInput = document.getElementById('customer-name-input');
 const customerPhoneInput = document.getElementById('customer-phone-input');
 const saveOnlyBtn = document.getElementById('save-only-btn');
@@ -142,13 +149,18 @@ async function loadCompanySettings() {
   return data;
 }
 
-// Re-fetches the ledger from the server using the current search text and
-// status filter chip. Server-side rather than filtering the local cache, so
-// filters stay correct even when there are more vouchers than the page size.
+// Re-fetches the ledger from the server using the current search text,
+// status filter chip, and date filter. Server-side rather than filtering
+// the local cache, so filters stay correct even when there are more
+// vouchers than the page size.
 async function reloadVouchers() {
   voucherList.innerHTML = '<div class="list-loading">Loading vouchers…</div>';
   const params = { p_limit: 50, ...filterToSearchParams(currentStatusFilter) };
   if (currentSearchQuery) params.p_q = currentSearchQuery;
+  if (currentDateRange) {
+    params.p_date_from = currentDateRange.from;
+    params.p_date_to = currentDateRange.to;
+  }
 
   const { data, error } = await supabaseClient.rpc('search_vouchers', params);
   if (error) {
@@ -185,10 +197,12 @@ function toLocalISODate(date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// Returns {from, to} for a preset, or null for 'custom' (caller reads the
-// date inputs directly instead). "This Week" starts Monday; both week and
-// month presets run through today, not the literal end of the period.
-function getDashboardRangeDates(preset) {
+// Returns {from, to} for a preset, or null for 'custom'/'all' (caller reads
+// the date inputs directly, or applies no date filter, instead). Shared by
+// the Dashboard and the Ledger History date filter. "This Week" starts
+// Monday; both week and month presets run through today, not the literal
+// end of the period.
+function getDateRangeForPreset(preset) {
   const today = new Date();
   if (preset === 'today') {
     const d = toLocalISODate(today);
@@ -235,7 +249,7 @@ async function loadDashboard() {
     if (!dashboardDateFrom.value || !dashboardDateTo.value) return; // wait for both custom dates
     range = { from: dashboardDateFrom.value, to: dashboardDateTo.value };
   } else {
-    range = getDashboardRangeDates(preset);
+    range = getDateRangeForPreset(preset);
   }
 
   dashboardLoading.hidden = false;
@@ -363,6 +377,8 @@ function matchesCurrentFilters(v) {
   if (currentStatusFilter === 'void' && v.voucher_status !== 'Void') return false;
   if (currentStatusFilter === 'paid' && (v.voucher_status === 'Void' || v.payment_status !== 'Paid')) return false;
   if (currentStatusFilter === 'unpaid' && (v.voucher_status === 'Void' || v.payment_status !== 'Unpaid')) return false;
+
+  if (currentDateRange && (v.date < currentDateRange.from || v.date > currentDateRange.to)) return false;
 
   if (currentSearchQuery) {
     const q = currentSearchQuery;
@@ -1501,6 +1517,47 @@ function handleFilterChipClick(e) {
   reloadVouchers();
 }
 
+// Ledger History's own date filter -- independent of the Dashboard's, but
+// shares getDateRangeForPreset() for identical Today/Yesterday/Week/Month
+// math. The select's own displayed value is the "currently active filter"
+// indicator; the clear button is only shown once a filter is applied.
+function handleLedgerDateFilterChange() {
+  const preset = ledgerDateFilter.value;
+
+  if (preset === 'all') {
+    ledgerDateCustomRow.hidden = true;
+    ledgerDateClearBtn.hidden = true;
+    currentDateRange = null;
+    reloadVouchers();
+    return;
+  }
+
+  ledgerDateClearBtn.hidden = false;
+
+  if (preset === 'custom') {
+    ledgerDateCustomRow.hidden = false;
+    return; // wait for the Apply button rather than reloading on every keystroke
+  }
+
+  ledgerDateCustomRow.hidden = true;
+  currentDateRange = getDateRangeForPreset(preset);
+  reloadVouchers();
+}
+
+function handleLedgerDateClear() {
+  ledgerDateFilter.value = 'all';
+  ledgerDateCustomRow.hidden = true;
+  ledgerDateClearBtn.hidden = true;
+  currentDateRange = null;
+  reloadVouchers();
+}
+
+function handleLedgerDateApply() {
+  if (!ledgerDateFrom.value || !ledgerDateTo.value) return;
+  currentDateRange = { from: ledgerDateFrom.value, to: ledgerDateTo.value };
+  reloadVouchers();
+}
+
 // --- Listeners & Tool configuration ---
 
 // Active tool toggles (Pencil vs Eraser)
@@ -1649,6 +1706,13 @@ savePrintBtn.addEventListener('click', () => handleSaveVoucher({ print: true }))
 searchInput.addEventListener('input', handleSearch);
 searchClearBtn.addEventListener('click', handleClearSearch);
 filterChipRow.addEventListener('click', handleFilterChipClick);
+ledgerDateFilter.addEventListener('change', handleLedgerDateFilterChange);
+ledgerDateClearBtn.addEventListener('click', handleLedgerDateClear);
+ledgerDateApplyBtn.addEventListener('click', handleLedgerDateApply);
+// Sane starting point for the custom-range inputs, same reasoning as the
+// Dashboard's equivalent fields.
+ledgerDateFrom.value = toLocalISODate(new Date());
+ledgerDateTo.value = toLocalISODate(new Date());
 
 // Modal details actions
 closeModalBtn.addEventListener('click', closeVoucherDetail);

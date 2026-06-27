@@ -65,6 +65,17 @@
   padding: 0;
 }
 
+/* Author-stylesheet `display` declarations (e.g. `display: flex` on a
+   button that's also toggled via the hidden attribute) otherwise beat the
+   browser's own `[hidden] { display: none }` UA rule at equal specificity
+   -- author origin always wins over user-agent origin in the cascade.
+   Without this, several hidden="" toggled elements throughout the app
+   (search-clear-btn, the new ledger date-filter controls) render visible
+   even while hidden. !important forces this to always win instead. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-darker);
@@ -232,6 +243,98 @@ textarea {
 .search-clear-btn svg {
   width: 14px;
   height: 14px;
+}
+
+.date-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px 0;
+}
+
+.date-filter-select {
+  flex: 1;
+  min-width: 0; /* lets the select itself shrink instead of pushing the clear button out */
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+
+.date-filter-clear-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: var(--transition-smooth);
+}
+
+.date-filter-clear-btn:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.date-filter-clear-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Stacked (not side-by-side) so the from/to inputs and Apply button never
+   have to fight for the sidebar's ~270px of usable width. */
+.date-filter-custom-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 24px 0;
+}
+
+.date-filter-custom-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-filter-custom-field label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.date-filter-custom-field input[type="date"] {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  padding: 5px 8px;
+}
+
+.date-filter-apply-btn {
+  align-self: flex-end;
+  background-color: var(--color-accent);
+  color: white;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.date-filter-apply-btn:hover {
+  background-color: var(--color-accent-hover);
 }
 
 .filter-chip-row {
@@ -1472,10 +1575,6 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 24px;
-}
-
-.dashboard-content[hidden] {
-  display: none;
 }
 
 .dashboard-summary-grid {
