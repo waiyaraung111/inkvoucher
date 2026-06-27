@@ -78,6 +78,11 @@ body {
   height: 100dvh;
   overflow: hidden;
   display: flex;
+  /* Stops the page's own elastic bounce/rubber-band scroll, which is what
+     was making Safari's chrome bar hide/show mid-write -- that chrome
+     change shrinks/grows the visible viewport, which used to feed back
+     into scaleVoucherToFit() and visibly resize the voucher while writing. */
+  overscroll-behavior: none;
   /* This is a fast-paced staff tool, not a document to read -- an
      accidental long-press anywhere shouldn't pop up Safari's
      Copy/Look Up/Find Selection menu. Inputs explicitly opt back in
@@ -85,6 +90,10 @@ body {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+}
+
+html {
+  overscroll-behavior: none;
 }
 
 input,
@@ -515,6 +524,12 @@ textarea {
   justify-content: flex-start;
   position: relative;
   overflow: hidden;
+  /* Scoped to the drawing area only (not body/html) so the sidebar's
+     ledger list keeps its normal scroll. A palm resting just outside a
+     row-canvas's own touch-action:none bounds -- in the table borders,
+     row gaps, or voucher padding -- could otherwise still let Safari see
+     an unconstrained second touch point and start a pinch-zoom gesture. */
+  touch-action: none;
 }
 
 /* Floating Tools Bar */

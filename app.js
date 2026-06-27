@@ -13,6 +13,7 @@ let companySettings = null;
 
 // Drawing states
 let isDrawing = false;
+let lastStrokeEndTime = 0; // Date.now() of the last pointerup/pointerleave -- see handleResize()
 let lastX = 0;
 let lastY = 0;
 let penColor = '#1d4ed8'; // Default blue ink
@@ -434,6 +435,7 @@ function draw(e) {
 function stopDrawing() {
   isDrawing = false;
   currentStroke = null;
+  lastStrokeEndTime = Date.now();
 }
 
 // Assembles the recorded strokes into the vector source-of-truth stored
@@ -457,7 +459,16 @@ function setupCanvasListeners() {
     canvasElement.addEventListener('pointerup', stopDrawing);
     canvasElement.addEventListener('pointerleave', stopDrawing);
   });
-  
+
+  // Safari's pinch-zoom gesture is a legacy WebKit-only event that bypasses
+  // touch-action entirely -- a resting palm next to the Pencil tip while
+  // writing is enough to register as a second touch point and start it,
+  // growing the whole page. The viewport meta tag is supposed to disable
+  // zoom outright, but this is the documented belt-and-suspenders blocker
+  // for it on iPadOS.
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('gesturechange', (e) => e.preventDefault());
+
   // Row clear buttons
   document.querySelectorAll('.clear-row-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -1385,12 +1396,20 @@ function scaleVoucherToFit() {
 // would wipe/redraw every canvas and visibly disrupt the line being drawn.
 // Debounced, and re-checks isDrawing when its timer fires so it keeps
 // rescheduling itself instead of cutting in on an active stroke.
+//
+// Handwriting lifts the pencil between every letter, so isDrawing alone
+// goes false for brief instants throughout an entire writing session --
+// a resize from the chrome bar hiding could land in exactly one of those
+// gaps and still rescale the voucher mid-sentence. RESCALE_QUIET_MS makes
+// it also wait for a real pause (longer than a letter-to-letter gap) since
+// the last stroke ended before committing to a rescale.
 let resizeDebounceTimer = null;
+const RESCALE_QUIET_MS = 600;
 function handleResize() {
   clearTimeout(resizeDebounceTimer);
   resizeDebounceTimer = setTimeout(() => {
     if (appContainer.hidden) return; // not logged in yet -- canvases are zero-size behind the auth screen
-    if (isDrawing) {
+    if (isDrawing || Date.now() - lastStrokeEndTime < RESCALE_QUIET_MS) {
       handleResize();
       return;
     }
