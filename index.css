@@ -135,6 +135,9 @@ textarea {
 
 .sidebar-header {
   padding: 24px;
+  /* Same top-safe-area problem as .workspace-header -- when the sidebar is
+     expanded, its own "Ledger History" title sits at the very top edge. */
+  padding-top: calc(24px + env(safe-area-inset-top, 0px));
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -478,8 +481,13 @@ textarea {
 }
 
 .workspace-header {
-  height: 70px;
+  min-height: 70px;
   padding: 0 32px;
+  /* viewport-fit=cover lets the page draw under Safari's address bar --
+     without this, the Ledger History toggle and logo can end up hidden
+     behind it. min-height (not height) lets the box grow to fit this
+     instead of squeezing its content into the original 70px. */
+  padding-top: env(safe-area-inset-top, 0px);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -1057,6 +1065,9 @@ textarea {
 .workspace-footer {
   min-height: 80px;
   padding: 12px 32px;
+  /* Same viewport-fit=cover reasoning as .workspace-header, for the bottom
+     edge (home indicator area) instead of the top. */
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-color);
   background-color: var(--bg-dark);
   display: flex;
@@ -1424,6 +1435,7 @@ textarea {
      tooltip/label) so everything fits on one row instead of overflowing. */
   .workspace-header {
     padding: 0 16px;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   .header-logo .badge {
@@ -1452,7 +1464,7 @@ textarea {
      has more real room and the footer never gets squeezed against the
      edge of the screen on tablet portrait. */
   .workspace-header {
-    height: 52px;
+    min-height: 52px;
   }
 
   .canvas-tools-bar {
@@ -1480,6 +1492,7 @@ textarea {
   .workspace-footer {
     min-height: 56px;
     padding: 8px 16px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   }
 
   .meta-controls {
