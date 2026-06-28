@@ -367,6 +367,42 @@ textarea {
   color: white;
 }
 
+/* Owner Settlement / Received By / Staff -- stacked label+select pairs,
+   same reasoning as .date-filter-custom-row: side-by-side would fight for
+   the sidebar's ~270px of usable width. */
+.extra-filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 24px 14px;
+}
+
+.extra-filter-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.extra-filter-field label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.extra-filter-field select {
+  flex: 1;
+  min-width: 0;
+  max-width: 150px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
 .result-count {
   padding: 0 24px 8px;
   font-size: 0.75rem;
@@ -534,6 +570,7 @@ textarea {
 .card-footer-row {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
   margin-top: 2px;
 }
 
@@ -1525,6 +1562,145 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+/* ==========================================================================
+   Owner Settlement -- internal only, lives in the voucher detail modal
+   below the printed-voucher preview image, never inside it.
+   ========================================================================== */
+.settlement-section {
+  width: 100%;
+  background-color: var(--bg-darker);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settlement-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settlement-detail {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.settlement-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+}
+
+.settlement-receive-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+}
+
+.settlement-owner-select {
+  flex: 1;
+  min-width: 140px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+/* ==========================================================================
+   Owner Management Modal
+   ========================================================================== */
+.owner-mgmt-card {
+  width: min(480px, 92vw);
+}
+
+.owner-mgmt-body {
+  align-items: stretch;
+}
+
+.owner-add-form {
+  display: flex;
+  gap: 10px;
+}
+
+.owner-add-form input {
+  flex: 1;
+  min-width: 0;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  padding: 10px 14px;
+  border-radius: 10px;
+}
+
+.owner-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.owner-row,
+.owner-edit-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background-color: var(--bg-darker);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.owner-row-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.owner-row-name {
+  font-weight: 600;
+}
+
+.owner-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.owner-edit-form {
+  flex-wrap: wrap;
+}
+
+.owner-edit-input {
+  flex: 1;
+  min-width: 120px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.owner-empty-row {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 16px 0;
 }
 
 /* ==========================================================================

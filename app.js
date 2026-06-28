@@ -9,8 +9,31 @@ let nextSequenceNumber = 1;
 let currentSearchQuery = '';
 let currentStatusFilter = 'all'; // all | active | paid | unpaid | void
 let currentDateRange = null; // null = All Dates, else {from, to} yyyy-mm-dd -- Ledger History's own date filter, independent of the Dashboard's
+let currentSettlementFilter = ''; // '' = All, else 'Not Received' | 'Received'
+let currentOwnerFilter = ''; // '' = All Owners, else an owners.id
+let currentStaffFilter = ''; // '' = All Staff, else a profiles.id
 let isSaving = false;
 let companySettings = null;
+
+// Current user's identity/role (Owner/Admin vs Staff) -- loaded once at
+// startup from profiles.role. The backend RPCs re-check this independently
+// (see supabase/schema.sql) -- this copy only drives which controls the UI
+// shows; it is never the actual enforcement.
+let currentUserId = null;
+let currentUserRole = 'staff';
+function isOwnerAdmin() {
+  return currentUserRole === 'owner_admin';
+}
+
+// Owners (Owner Management) and Staff (profiles) caches -- small, shared
+// lookup tables loaded once at startup and refreshed after edits, used to
+// populate filter/assignment dropdowns and to resolve a settlement's
+// owner/recorded-by id into a display name without a round trip per voucher.
+let allOwners = [];
+let ownersById = new Map();
+let allProfiles = [];
+let profilesById = new Map();
+let editingOwnerId = null;
 
 // Drawing states
 let isDrawing = false;
@@ -65,6 +88,9 @@ const ledgerDateCustomRow = document.getElementById('ledger-date-custom-row');
 const ledgerDateFrom = document.getElementById('ledger-date-from');
 const ledgerDateTo = document.getElementById('ledger-date-to');
 const ledgerDateApplyBtn = document.getElementById('ledger-date-apply-btn');
+const ledgerSettlementFilter = document.getElementById('ledger-settlement-filter');
+const ledgerOwnerFilter = document.getElementById('ledger-owner-filter');
+const ledgerStaffFilter = document.getElementById('ledger-staff-filter');
 const customerNameInput = document.getElementById('customer-name-input');
 const customerPhoneInput = document.getElementById('customer-phone-input');
 const saveOnlyBtn = document.getElementById('save-only-btn');
@@ -100,6 +126,24 @@ const downloadBtn = document.getElementById('download-btn');
 const markPaidBtn = document.getElementById('mark-paid-btn');
 const markUnpaidBtn = document.getElementById('mark-unpaid-btn');
 const printBtn = document.getElementById('print-btn');
+
+// Owner Settlement Elements (voucher detail modal)
+const modalSettlementBadge = document.getElementById('modal-settlement-badge');
+const modalSettlementDetail = document.getElementById('modal-settlement-detail');
+const modalSettlementActions = document.getElementById('modal-settlement-actions');
+const settlementReceiveRow = document.getElementById('settlement-receive-row');
+const settlementOwnerSelect = document.getElementById('settlement-owner-select');
+const markSettlementReceivedBtn = document.getElementById('mark-settlement-received-btn');
+const markSettlementNotReceivedBtn = document.getElementById('mark-settlement-not-received-btn');
+
+// Owner Management Elements
+const openOwnerMgmtBtn = document.getElementById('open-owner-mgmt-btn');
+const ownerMgmtModal = document.getElementById('owner-mgmt-modal');
+const closeOwnerMgmtBtn = document.getElementById('close-owner-mgmt-btn');
+const ownerAddForm = document.getElementById('owner-add-form');
+const ownerAddNameInput = document.getElementById('owner-add-name-input');
+const ownerListEl = document.getElementById('owner-list');
+const ownerListLoading = document.getElementById('owner-list-loading');
 
 // Dashboard Elements
 const openDashboardBtn = document.getElementById('open-dashboard-btn');
@@ -149,6 +193,70 @@ async function loadCompanySettings() {
   return data;
 }
 
+// Determines whether the logged-in user can manage owners and update Owner
+// Settlement (the actual permission gate is server-side -- see is_owner_admin()
+// in supabase/schema.sql -- this only decides which controls the UI shows).
+async function loadCurrentUserProfile() {
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  if (!user) return null;
+  currentUserId = user.id;
+
+  const { data, error } = await supabaseClient.from('profiles').select('id, name, role').eq('id', user.id).maybeSingle();
+  if (error) {
+    console.error('Failed to load current user profile:', error);
+    return null;
+  }
+  currentUserRole = (data && data.role) || 'staff';
+  return data;
+}
+
+// Owner Management entities -- distinct from app logins. Loaded in full
+// (active + disabled) so the Owner Management list and the "Received By"
+// ledger filter can show every owner ever recorded; only active owners are
+// offered in the settlement assignment dropdown (see getActiveOwners()).
+async function loadOwners() {
+  const { data, error } = await supabaseClient.from('owners').select('*').order('name');
+  if (error) {
+    console.error('Failed to load owners:', error);
+    return;
+  }
+  allOwners = data || [];
+  ownersById = new Map(allOwners.map((o) => [o.id, o]));
+}
+
+function getActiveOwners() {
+  return allOwners.filter((o) => o.active);
+}
+
+// Staff directory (profiles) -- used for the Ledger's "Staff" filter and to
+// resolve a settlement's "recorded by" id into a display name.
+async function loadProfiles() {
+  const { data, error } = await supabaseClient.from('profiles').select('id, name, role').order('name');
+  if (error) {
+    console.error('Failed to load staff list:', error);
+    return;
+  }
+  allProfiles = data || [];
+  profilesById = new Map(allProfiles.map((p) => [p.id, p]));
+}
+
+function populateOwnerFilterSelect() {
+  ledgerOwnerFilter.innerHTML = '<option value="">All Owners</option>' +
+    allOwners.map((o) => `<option value="${o.id}">${escapeHtml(o.name)}${o.active ? '' : ' (disabled)'}</option>`).join('');
+  ledgerOwnerFilter.value = currentOwnerFilter;
+}
+
+function populateStaffFilterSelect() {
+  ledgerStaffFilter.innerHTML = '<option value="">All Staff</option>' +
+    allProfiles.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+  ledgerStaffFilter.value = currentStaffFilter;
+}
+
+function populateSettlementOwnerSelect() {
+  settlementOwnerSelect.innerHTML = '<option value="">Select owner…</option>' +
+    getActiveOwners().map((o) => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('');
+}
+
 // Re-fetches the ledger from the server using the current search text,
 // status filter chip, and date filter. Server-side rather than filtering
 // the local cache, so filters stay correct even when there are more
@@ -161,6 +269,9 @@ async function reloadVouchers() {
     params.p_date_from = currentDateRange.from;
     params.p_date_to = currentDateRange.to;
   }
+  if (currentSettlementFilter) params.p_settlement_status = currentSettlementFilter;
+  if (currentOwnerFilter) params.p_received_by_owner = currentOwnerFilter;
+  if (currentStaffFilter) params.p_created_by = currentStaffFilter;
 
   const { data, error } = await supabaseClient.rpc('search_vouchers', params);
   if (error) {
@@ -179,8 +290,9 @@ async function reloadVouchers() {
 function describeRpcError(error) {
   if (!error) return 'Unknown error.';
   if (error.code === '23514') return 'This voucher is voided -- it can no longer be changed.';
-  if (error.code === 'P0002') return 'Voucher not found.';
+  if (error.code === 'P0002') return 'Not found.';
   if (error.code === '28000') return 'You need to be logged in to do that.';
+  if (error.code === '42501') return 'Only Owner/Admin can do that.';
   return error.message || 'Something went wrong.';
 }
 
@@ -380,6 +492,10 @@ function matchesCurrentFilters(v) {
 
   if (currentDateRange && (v.date < currentDateRange.from || v.date > currentDateRange.to)) return false;
 
+  if (currentSettlementFilter && v.settlement_status !== currentSettlementFilter) return false;
+  if (currentOwnerFilter && v.settlement_received_by !== currentOwnerFilter) return false;
+  if (currentStaffFilter && v.created_by !== currentStaffFilter) return false;
+
   if (currentSearchQuery) {
     const q = currentSearchQuery;
     const displayId = formatVoucherID(v.sequence_number).toLowerCase();
@@ -423,6 +539,160 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+// --- Owner Management (Owner/Admin only -- enforced server-side too) ---
+
+async function openOwnerMgmt() {
+  ownerMgmtModal.classList.add('active');
+  editingOwnerId = null;
+  ownerListLoading.hidden = false;
+  await loadOwners();
+  ownerListLoading.hidden = true;
+  renderOwnerList(allOwners);
+}
+
+function closeOwnerMgmt() {
+  ownerMgmtModal.classList.remove('active');
+  editingOwnerId = null;
+}
+
+// Owners never disappear from disk (disable, not delete -- see set_owner_active
+// in supabase/schema.sql), so the list always shows everyone who was ever
+// added; a status-pill marks which ones are currently active.
+function renderOwnerList(owners) {
+  ownerListEl.querySelectorAll('.owner-row, .owner-edit-form, .owner-empty-row').forEach((el) => el.remove());
+
+  if (owners.length === 0) {
+    ownerListEl.insertAdjacentHTML('beforeend', '<div class="owner-empty-row">No owners yet. Add one above.</div>');
+    return;
+  }
+
+  owners.forEach((o) => {
+    if (editingOwnerId === o.id) {
+      ownerListEl.insertAdjacentHTML('beforeend', `
+        <form class="owner-edit-form" data-owner-id="${o.id}">
+          <input type="text" class="owner-edit-input" value="${escapeHtml(o.name)}" required>
+          <button type="submit" class="btn btn-secondary">Save</button>
+          <button type="button" class="btn btn-secondary owner-cancel-edit-btn">Cancel</button>
+        </form>
+      `);
+      return;
+    }
+
+    ownerListEl.insertAdjacentHTML('beforeend', `
+      <div class="owner-row" data-owner-id="${o.id}">
+        <div class="owner-row-info">
+          <span class="owner-row-name">${escapeHtml(o.name)}</span>
+          <span class="status-pill sm ${o.active ? 'is-paid' : 'is-void'}">${o.active ? 'Active' : 'Disabled'}</span>
+        </div>
+        <div class="owner-row-actions">
+          <button class="btn btn-secondary owner-edit-btn" data-owner-id="${o.id}">Edit</button>
+          <button class="btn btn-secondary ${o.active ? 'text-danger' : ''} owner-toggle-btn" data-owner-id="${o.id}" data-active="${o.active}">${o.active ? 'Disable' : 'Enable'}</button>
+        </div>
+      </div>
+    `);
+  });
+}
+
+// Refreshes every place the owners cache feeds: the management list itself,
+// the Ledger's "Received By" filter, and the settlement assignment dropdown
+// (only the latter is currently open/visible, but it's cheap to keep fresh).
+async function refreshOwnersEverywhere() {
+  await loadOwners();
+  renderOwnerList(allOwners);
+  populateOwnerFilterSelect();
+  populateSettlementOwnerSelect();
+}
+
+ownerAddForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = ownerAddNameInput.value.trim();
+  if (!name) return;
+
+  const submitBtn = ownerAddForm.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  const { data, error } = await supabaseClient.rpc('add_owner', { p_name: name });
+  submitBtn.disabled = false;
+
+  if (error) {
+    console.error('Failed to add owner:', error);
+    showToast('Failed to add owner: ' + describeRpcError(error), 'error');
+    return;
+  }
+
+  ownerAddNameInput.value = '';
+  await refreshOwnersEverywhere();
+  showToast(`Owner "${data.name}" added.`, 'success');
+});
+
+ownerListEl.addEventListener('click', async (e) => {
+  const editBtn = e.target.closest('.owner-edit-btn');
+  if (editBtn) {
+    editingOwnerId = editBtn.dataset.ownerId;
+    renderOwnerList(allOwners);
+    return;
+  }
+
+  const cancelBtn = e.target.closest('.owner-cancel-edit-btn');
+  if (cancelBtn) {
+    editingOwnerId = null;
+    renderOwnerList(allOwners);
+    return;
+  }
+
+  const toggleBtn = e.target.closest('.owner-toggle-btn');
+  if (toggleBtn) {
+    const ownerId = toggleBtn.dataset.ownerId;
+    const isActive = toggleBtn.dataset.active === 'true';
+    const owner = ownersById.get(ownerId);
+    const verb = isActive ? 'disable' : 're-enable';
+    const ok = await showConfirm(
+      `Are you sure you want to ${verb} owner "${owner ? owner.name : ''}"?`,
+      { confirmLabel: isActive ? 'Disable' : 'Enable', danger: isActive }
+    );
+    if (!ok) return;
+
+    toggleBtn.disabled = true;
+    const { data, error } = await supabaseClient.rpc('set_owner_active', { p_owner_id: ownerId, p_active: !isActive });
+    toggleBtn.disabled = false;
+
+    if (error) {
+      console.error('Failed to update owner:', error);
+      showToast('Failed to update owner: ' + describeRpcError(error), 'error');
+      return;
+    }
+
+    await refreshOwnersEverywhere();
+    showToast(`Owner "${data.name}" ${data.active ? 'enabled' : 'disabled'}.`, 'success');
+  }
+});
+
+ownerListEl.addEventListener('submit', async (e) => {
+  const form = e.target.closest('.owner-edit-form');
+  if (!form) return;
+  e.preventDefault();
+
+  const ownerId = form.dataset.ownerId;
+  const input = form.querySelector('.owner-edit-input');
+  const name = input.value.trim();
+  if (!name) return;
+
+  const { data, error } = await supabaseClient.rpc('update_owner', { p_owner_id: ownerId, p_name: name });
+  if (error) {
+    console.error('Failed to update owner:', error);
+    showToast('Failed to update owner: ' + describeRpcError(error), 'error');
+    return;
+  }
+
+  editingOwnerId = null;
+  await refreshOwnersEverywhere();
+  showToast(`Owner renamed to "${data.name}".`, 'success');
+});
+
+openOwnerMgmtBtn.addEventListener('click', openOwnerMgmt);
+closeOwnerMgmtBtn.addEventListener('click', closeOwnerMgmt);
+markSettlementReceivedBtn.addEventListener('click', handleMarkSettlementReceived);
+markSettlementNotReceivedBtn.addEventListener('click', handleMarkSettlementNotReceived);
 
 // --- Toast notifications (replaces window.alert for success/error feedback) ---
 const toastContainer = document.getElementById('toast-container');
@@ -1089,6 +1359,7 @@ async function renderVoucherList(vouchers) {
         </div>
         <div class="card-footer-row">
           <span class="status-pill sm ${status.className}">${status.label}</span>
+          ${v.voucher_status !== 'Void' ? `<span class="status-pill sm ${v.settlement_status === 'Received' ? 'is-paid' : 'is-unpaid'}">${v.settlement_status === 'Received' ? 'Settled' : 'Unsettled'}</span>` : ''}
         </div>
       </div>
     `;
@@ -1126,6 +1397,38 @@ function updateModalFromVoucher(voucher) {
   voidBtn.style.display = isVoid ? 'none' : 'inline-flex';
   markPaidBtn.style.display = (!isVoid && voucher.payment_status === 'Unpaid') ? 'inline-flex' : 'none';
   markUnpaidBtn.style.display = (!isVoid && voucher.payment_status === 'Paid') ? 'inline-flex' : 'none';
+
+  updateSettlementSectionFromVoucher(voucher, isVoid);
+}
+
+// Owner Settlement is internal-only and intentionally separate from the
+// Paid/Unpaid block above -- it never reads payment_status, and (per
+// supabase/schema.sql) is never baked into the printed voucher image. The
+// status badge is shown to everyone (Staff included, read-only); the
+// actions below it are hidden unless the logged-in user is Owner/Admin --
+// the backend RPCs re-check this independently, so hiding here is only UX,
+// not the actual security boundary.
+function updateSettlementSectionFromVoucher(voucher, isVoid) {
+  const isReceived = voucher.settlement_status === 'Received';
+  modalSettlementBadge.textContent = isReceived ? 'Received' : 'Not Received';
+  modalSettlementBadge.className = `status-pill ${isReceived ? 'is-paid' : 'is-unpaid'}`;
+
+  if (isReceived) {
+    const ownerName = (ownersById.get(voucher.settlement_received_by) || {}).name || 'an unknown owner';
+    const recordedByName = (profilesById.get(voucher.settlement_recorded_by) || {}).name || 'unknown';
+    modalSettlementDetail.textContent = `Received by ${ownerName} on ${formatTimestamp(voucher.settlement_at)} · recorded by ${recordedByName}`;
+    modalSettlementDetail.hidden = false;
+  } else {
+    modalSettlementDetail.hidden = true;
+  }
+
+  const canManageSettlement = isOwnerAdmin() && !isVoid;
+  modalSettlementActions.hidden = !canManageSettlement;
+  if (canManageSettlement) {
+    settlementReceiveRow.hidden = isReceived;
+    markSettlementNotReceivedBtn.hidden = !isReceived;
+    if (!isReceived) populateSettlementOwnerSelect();
+  }
 }
 
 async function openVoucherDetail(voucherId) {
@@ -1319,7 +1622,7 @@ async function handleSaveVoucher({ print = false } = {}) {
 // one shared loading flag covers all of them -- disables the row while an
 // RPC is in flight to stop a double-tap firing it twice.
 function setModalActionsLoading(loading) {
-  [markPaidBtn, markUnpaidBtn, voidBtn, printBtn, downloadBtn].forEach((btn) => {
+  [markPaidBtn, markUnpaidBtn, voidBtn, printBtn, downloadBtn, markSettlementReceivedBtn, markSettlementNotReceivedBtn].forEach((btn) => {
     btn.disabled = loading;
   });
 }
@@ -1375,6 +1678,48 @@ async function handleMarkUnpaid() {
   patchVoucherInLocalState(updated);
   updateModalFromVoucher(updated);
   showToast(`Voucher ${formatVoucherID(updated.sequence_number)} marked Unpaid.`, 'success');
+}
+
+async function handleMarkSettlementReceived() {
+  if (!activeVoucher) return;
+  const ownerId = settlementOwnerSelect.value;
+  if (!ownerId) {
+    showToast('Select an owner first.', 'error');
+    return;
+  }
+  setModalActionsLoading(true);
+  const { data: updated, error } = await supabaseClient.rpc('mark_voucher_settlement_received', {
+    p_voucher_id: activeVoucher.id,
+    p_owner_id: ownerId,
+  });
+  setModalActionsLoading(false);
+  if (error) {
+    console.error('Error marking settlement received:', error);
+    showToast('Failed to update Owner Settlement: ' + describeRpcError(error), 'error');
+    return;
+  }
+  activeVoucher = updated;
+  patchVoucherInLocalState(updated);
+  updateModalFromVoucher(updated);
+  showToast(`Voucher ${formatVoucherID(updated.sequence_number)} marked Owner Received.`, 'success');
+}
+
+async function handleMarkSettlementNotReceived() {
+  if (!activeVoucher) return;
+  setModalActionsLoading(true);
+  const { data: updated, error } = await supabaseClient.rpc('mark_voucher_settlement_not_received', {
+    p_voucher_id: activeVoucher.id,
+  });
+  setModalActionsLoading(false);
+  if (error) {
+    console.error('Error marking settlement not received:', error);
+    showToast('Failed to update Owner Settlement: ' + describeRpcError(error), 'error');
+    return;
+  }
+  activeVoucher = updated;
+  patchVoucherInLocalState(updated);
+  updateModalFromVoucher(updated);
+  showToast(`Voucher ${formatVoucherID(updated.sequence_number)} reverted to Settlement Not Received.`, 'success');
 }
 
 // Shared by the modal's Print button and the Save & Print workflow -- logs
@@ -1623,6 +1968,21 @@ function handleLedgerDateApply() {
   reloadVouchers();
 }
 
+function handleLedgerSettlementFilterChange() {
+  currentSettlementFilter = ledgerSettlementFilter.value;
+  reloadVouchers();
+}
+
+function handleLedgerOwnerFilterChange() {
+  currentOwnerFilter = ledgerOwnerFilter.value;
+  reloadVouchers();
+}
+
+function handleLedgerStaffFilterChange() {
+  currentStaffFilter = ledgerStaffFilter.value;
+  reloadVouchers();
+}
+
 // --- Listeners & Tool configuration ---
 
 // Active tool toggles (Pencil vs Eraser)
@@ -1792,6 +2152,9 @@ filterChipRow.addEventListener('click', handleFilterChipClick);
 ledgerDateFilter.addEventListener('change', handleLedgerDateFilterChange);
 ledgerDateClearBtn.addEventListener('click', handleLedgerDateClear);
 ledgerDateApplyBtn.addEventListener('click', handleLedgerDateApply);
+ledgerSettlementFilter.addEventListener('change', handleLedgerSettlementFilterChange);
+ledgerOwnerFilter.addEventListener('change', handleLedgerOwnerFilterChange);
+ledgerStaffFilter.addEventListener('change', handleLedgerStaffFilterChange);
 // Sane starting point for the custom-range inputs, same reasoning as the
 // Dashboard's equivalent fields.
 ledgerDateFrom.value = toLocalISODate(new Date());
@@ -1849,7 +2212,18 @@ function syncSidebarForViewport() {
 // Initializer
 async function startApp() {
   try {
-    companySettings = await loadCompanySettings();
+    const [company] = await Promise.all([
+      loadCompanySettings(),
+      loadCurrentUserProfile(),
+      loadOwners(),
+      loadProfiles(),
+    ]);
+    companySettings = company;
+
+    openOwnerMgmtBtn.hidden = !isOwnerAdmin();
+    populateOwnerFilterSelect();
+    populateStaffFilterSelect();
+
     await reloadVouchers();
 
     const maxSeqNum = currentVouchers.reduce((max, v) => Math.max(max, v.sequence_number), 0);

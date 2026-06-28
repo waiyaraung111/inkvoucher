@@ -77,6 +77,28 @@
         <button class="filter-chip" data-filter="unpaid">Unpaid</button>
         <button class="filter-chip" data-filter="void">Void</button>
       </div>
+      <div class="extra-filter-row" id="extra-filter-row">
+        <div class="extra-filter-field">
+          <label for="ledger-settlement-filter">Owner Settlement</label>
+          <select id="ledger-settlement-filter" title="Filter ledger by Owner Settlement status">
+            <option value="">All</option>
+            <option value="Not Received">Not Received</option>
+            <option value="Received">Received</option>
+          </select>
+        </div>
+        <div class="extra-filter-field">
+          <label for="ledger-owner-filter">Received By</label>
+          <select id="ledger-owner-filter" title="Filter ledger by which owner received settlement">
+            <option value="">All Owners</option>
+          </select>
+        </div>
+        <div class="extra-filter-field">
+          <label for="ledger-staff-filter">Staff</label>
+          <select id="ledger-staff-filter" title="Filter ledger by which staff member created the voucher">
+            <option value="">All Staff</option>
+          </select>
+        </div>
+      </div>
       <div class="result-count" id="result-count"></div>
       <div class="voucher-list" id="voucher-list">
         <div class="empty-history" id="empty-history">
@@ -110,6 +132,10 @@
           <button class="btn btn-secondary" id="open-dashboard-btn" title="View daily summary dashboard">
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
             <span class="btn-label">Dashboard</span>
+          </button>
+          <button class="btn btn-secondary" id="open-owner-mgmt-btn" title="Manage owners (Owner/Admin only)" hidden>
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span class="btn-label">Owners</span>
           </button>
           <div class="divider"></div>
           <button class="btn btn-secondary" id="logout-btn" title="Log out">
@@ -427,6 +453,27 @@
             <img class="voucher-preview-img" id="modal-voucher-img" src="" alt="Handwritten Voucher">
             <div class="void-overlay" id="modal-void-overlay">VOID</div>
           </div>
+
+          <!-- Owner Settlement -- internal only, never part of the printed
+               voucher image above. Status is visible to everyone (read-only
+               for Staff); the actions below are hidden unless the logged-in
+               user is Owner/Admin (also enforced on the backend). -->
+          <div class="settlement-section" id="modal-settlement-section">
+            <div class="settlement-header-row">
+              <span class="control-label">Owner Settlement:</span>
+              <span class="status-pill" id="modal-settlement-badge">Not Received</span>
+            </div>
+            <p class="settlement-detail" id="modal-settlement-detail" hidden></p>
+            <div class="settlement-actions" id="modal-settlement-actions" hidden>
+              <div class="settlement-receive-row" id="settlement-receive-row">
+                <select class="settlement-owner-select" id="settlement-owner-select">
+                  <option value="">Select owner…</option>
+                </select>
+                <button class="btn btn-secondary" id="mark-settlement-received-btn">Mark Received</button>
+              </div>
+              <button class="btn btn-secondary text-danger" id="mark-settlement-not-received-btn" hidden>Mark Not Received</button>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer">
@@ -545,6 +592,31 @@
               </h4>
               <div class="dashboard-outstanding-list" id="dashboard-outstanding-list"></div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Owner Management Modal (Owner/Admin only) -->
+    <div class="modal-overlay" id="owner-mgmt-modal">
+      <div class="modal-card owner-mgmt-card">
+        <div class="modal-header">
+          <div class="modal-title-info">
+            <h3>Owner Management</h3>
+          </div>
+          <button class="close-modal-btn" id="close-owner-mgmt-btn" title="Close Owner Management">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+
+        <div class="modal-body owner-mgmt-body">
+          <form class="owner-add-form" id="owner-add-form">
+            <input type="text" id="owner-add-name-input" placeholder="Owner name" required>
+            <button type="submit" class="btn btn-primary">Add Owner</button>
+          </form>
+
+          <div class="owner-list" id="owner-list">
+            <div class="list-loading" id="owner-list-loading" hidden>Loading owners…</div>
           </div>
         </div>
       </div>

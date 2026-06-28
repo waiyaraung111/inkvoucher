@@ -15,6 +15,9 @@ on conflict (id) do nothing;
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   name text not null,
+  -- 'owner_admin' can update Owner Settlement and manage owners; 'staff'
+  -- cannot. Not self-service -- see the column-level grant below.
+  role text not null default 'staff' check (role in ('staff', 'owner_admin')),
   created_at timestamptz not null default now()
 );
 
@@ -51,6 +54,17 @@ insert into public.company_settings (id, company_name, address, phone)
 values (1, 'Your Company Name', 'Your Company Address', 'Your Phone Number')
 on conflict (id) do nothing;
 
+-- ---------- owners (Owner Management -- internal settlement recipients,
+-- distinct from app user accounts/logins. Disabled, never hard-deleted, so
+-- historical vouchers' settlement_received_by stays valid.) ----------
+create table public.owners (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  active boolean not null default true,
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+
 -- ---------- vouchers ----------
 create table public.vouchers (
   id uuid primary key default gen_random_uuid(),
@@ -71,7 +85,15 @@ create table public.vouchers (
   print_count integer not null default 0,
   created_at timestamptz not null default now(),
   voided_at timestamptz,
-  voided_by uuid references auth.users(id)
+  voided_by uuid references auth.users(id),
+  -- ---- Owner Settlement: internal only, completely separate from
+  -- payment_status above. Never rendered into the printed voucher PNG/PDF
+  -- -- see renderCompositeVoucher()/buildPrintHtml() in app.js, which never
+  -- read these columns. ----
+  settlement_status text not null default 'Not Received' check (settlement_status in ('Not Received','Received')),
+  settlement_received_by uuid references public.owners(id),
+  settlement_at timestamptz,
+  settlement_recorded_by uuid references auth.users(id)
 );
 
 create index vouchers_created_at_idx on public.vouchers (created_at desc);
@@ -79,6 +101,8 @@ create index vouchers_payment_status_idx on public.vouchers (payment_status);
 create index vouchers_voucher_status_idx on public.vouchers (voucher_status);
 create index vouchers_customer_phone_idx on public.vouchers (customer_phone);
 create index vouchers_date_idx on public.vouchers (date);
+create index vouchers_settlement_status_idx on public.vouchers (settlement_status);
+create index vouchers_settlement_received_by_idx on public.vouchers (settlement_received_by);
 
 -- ---------- print_events (audit trail behind print_count/printed_at) ----------
 create table public.print_events (
@@ -89,6 +113,17 @@ create table public.print_events (
 );
 create index print_events_voucher_id_idx on public.print_events (voucher_id);
 
+-- ---------- settlement_audit_log (every Owner Settlement action, append-only) ----------
+create table public.settlement_audit_log (
+  id uuid primary key default gen_random_uuid(),
+  voucher_id uuid not null references public.vouchers(id) on delete cascade,
+  action text not null check (action in ('Received','Not Received')),
+  owner_id uuid references public.owners(id),
+  performed_by uuid not null references auth.users(id),
+  performed_at timestamptz not null default now()
+);
+create index settlement_audit_log_voucher_id_idx on public.settlement_audit_log (voucher_id);
+
 -- ============================================================
 -- Row Level Security
 -- ============================================================
@@ -96,11 +131,22 @@ alter table public.profiles enable row level security;
 alter table public.company_settings enable row level security;
 alter table public.vouchers enable row level security;
 alter table public.print_events enable row level security;
+alter table public.owners enable row level security;
+alter table public.settlement_audit_log enable row level security;
 
 create policy "Staff can view profiles" on public.profiles
   for select to authenticated using (true);
 create policy "Staff can update own profile" on public.profiles
   for update to authenticated using (id = auth.uid());
+
+-- RLS policies restrict which ROWS a user can touch, not which COLUMNS --
+-- without this, the policy above would let any authenticated user grant
+-- themselves Owner/Admin via a direct `.update({ role: 'owner_admin' })`
+-- call. Column-level privilege closes that: staff can still rename
+-- themselves, but role is only ever changed by editing the row directly in
+-- the Supabase Dashboard.
+revoke update on public.profiles from authenticated;
+grant update (name) on public.profiles to authenticated;
 
 create policy "Staff can view company settings" on public.company_settings
   for select to authenticated using (true);
@@ -118,6 +164,15 @@ create policy "Staff can view vouchers" on public.vouchers
 create policy "Staff can view print events" on public.print_events
   for select to authenticated using (true);
 -- No insert policy -- rows are only ever created via log_voucher_print().
+
+create policy "Staff can view owners" on public.owners
+  for select to authenticated using (true);
+-- No insert/update/delete policy -- mutations only via add_owner/
+-- update_owner/set_owner_active below, which enforce Owner/Admin.
+
+create policy "Staff can view settlement audit log" on public.settlement_audit_log
+  for select to authenticated using (true);
+-- No insert policy -- rows are only ever created via the settlement RPCs below.
 
 create policy "Staff can upload voucher images" on storage.objects
   for insert to authenticated with check (bucket_id = 'voucher-images');
@@ -327,6 +382,204 @@ end;
 $$;
 grant execute on function public.log_voucher_print to authenticated;
 
+-- ============================================================
+-- Owner Settlement -- permission helper, owner management, and the
+-- settlement RPCs. "Internal Owner Settlement" is intentionally completely
+-- separate from Customer Payment Status above: no function here reads or
+-- writes payment_status/paid_at, and create_voucher/mark_voucher_paid/
+-- mark_voucher_unpaid above never touch the settlement_* columns.
+-- ============================================================
+create or replace function public.is_owner_admin()
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles where id = auth.uid() and role = 'owner_admin'
+  );
+$$;
+grant execute on function public.is_owner_admin to authenticated;
+
+create or replace function public.add_owner(p_name text)
+returns public.owners
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_owner public.owners;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can manage owners' using errcode = '42501';
+  end if;
+  if p_name is null or trim(p_name) = '' then
+    raise exception 'name is required';
+  end if;
+
+  insert into public.owners (name, created_by)
+  values (trim(p_name), auth.uid())
+  returning * into v_owner;
+
+  return v_owner;
+end;
+$$;
+grant execute on function public.add_owner to authenticated;
+
+create or replace function public.update_owner(p_owner_id uuid, p_name text)
+returns public.owners
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_owner public.owners;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can manage owners' using errcode = '42501';
+  end if;
+  if p_name is null or trim(p_name) = '' then
+    raise exception 'name is required';
+  end if;
+
+  update public.owners set name = trim(p_name)
+  where id = p_owner_id
+  returning * into v_owner;
+
+  if not found then
+    raise exception 'Owner not found' using errcode = 'P0002';
+  end if;
+
+  return v_owner;
+end;
+$$;
+grant execute on function public.update_owner to authenticated;
+
+-- Disable/re-enable -- owners are never permanently deleted, since past
+-- vouchers' settlement_received_by references them historically.
+create or replace function public.set_owner_active(p_owner_id uuid, p_active boolean)
+returns public.owners
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_owner public.owners;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can manage owners' using errcode = '42501';
+  end if;
+
+  update public.owners set active = p_active
+  where id = p_owner_id
+  returning * into v_owner;
+
+  if not found then
+    raise exception 'Owner not found' using errcode = 'P0002';
+  end if;
+
+  return v_owner;
+end;
+$$;
+grant execute on function public.set_owner_active to authenticated;
+
+create or replace function public.mark_voucher_settlement_received(p_voucher_id uuid, p_owner_id uuid)
+returns public.vouchers
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_voucher public.vouchers;
+  v_owner public.owners;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can update Owner Settlement' using errcode = '42501';
+  end if;
+
+  select * into v_voucher from public.vouchers where id = p_voucher_id;
+  if not found then
+    raise exception 'Voucher not found' using errcode = 'P0002';
+  end if;
+  if v_voucher.voucher_status = 'Void' then
+    raise exception 'Cannot change settlement status on a voided voucher' using errcode = '23514';
+  end if;
+
+  select * into v_owner from public.owners where id = p_owner_id;
+  if not found then
+    raise exception 'Owner not found' using errcode = 'P0002';
+  end if;
+  if not v_owner.active then
+    raise exception 'Owner is disabled';
+  end if;
+
+  update public.vouchers
+  set settlement_status = 'Received',
+      settlement_received_by = p_owner_id,
+      settlement_at = now(),
+      settlement_recorded_by = auth.uid()
+  where id = p_voucher_id
+  returning * into v_voucher;
+
+  insert into public.settlement_audit_log (voucher_id, action, owner_id, performed_by)
+  values (p_voucher_id, 'Received', p_owner_id, auth.uid());
+
+  return v_voucher;
+end;
+$$;
+grant execute on function public.mark_voucher_settlement_received to authenticated;
+
+create or replace function public.mark_voucher_settlement_not_received(p_voucher_id uuid)
+returns public.vouchers
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_voucher public.vouchers;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can update Owner Settlement' using errcode = '42501';
+  end if;
+
+  select * into v_voucher from public.vouchers where id = p_voucher_id;
+  if not found then
+    raise exception 'Voucher not found' using errcode = 'P0002';
+  end if;
+  if v_voucher.voucher_status = 'Void' then
+    raise exception 'Cannot change settlement status on a voided voucher' using errcode = '23514';
+  end if;
+  if v_voucher.settlement_status = 'Not Received' then
+    return v_voucher; -- idempotent no-op
+  end if;
+
+  update public.vouchers
+  set settlement_status = 'Not Received',
+      settlement_received_by = null,
+      settlement_at = null,
+      settlement_recorded_by = auth.uid()
+  where id = p_voucher_id
+  returning * into v_voucher;
+
+  insert into public.settlement_audit_log (voucher_id, action, owner_id, performed_by)
+  values (p_voucher_id, 'Not Received', null, auth.uid());
+
+  return v_voucher;
+end;
+$$;
+grant execute on function public.mark_voucher_settlement_not_received to authenticated;
+
 create or replace function public.search_vouchers(
   p_q text default null,
   p_voucher_status text default null,
@@ -337,6 +590,9 @@ create or replace function public.search_vouchers(
   p_date date default null,
   p_date_from date default null,
   p_date_to date default null,
+  p_settlement_status text default null,
+  p_received_by_owner uuid default null,
+  p_created_by uuid default null,
   p_limit int default 25,
   p_offset int default 0
 )
@@ -345,7 +601,10 @@ returns table (
   date date, payment_method text, voucher_status text, payment_status text,
   paid_at timestamptz, total_amount numeric, items jsonb, image_path text,
   printed_at timestamptz, print_count integer, created_at timestamptz,
-  voided_at timestamptz, total_count bigint
+  voided_at timestamptz, created_by uuid,
+  settlement_status text, settlement_received_by uuid,
+  settlement_at timestamptz, settlement_recorded_by uuid,
+  total_count bigint
 )
 language sql stable
 set search_path = public
@@ -354,7 +613,9 @@ as $$
     v.id, v.sequence_number, v.customer_name, v.customer_phone, v.date,
     v.payment_method, v.voucher_status, v.payment_status, v.paid_at,
     v.total_amount, v.items, v.image_path, v.printed_at, v.print_count,
-    v.created_at, v.voided_at,
+    v.created_at, v.voided_at, v.created_by,
+    v.settlement_status, v.settlement_received_by,
+    v.settlement_at, v.settlement_recorded_by,
     count(*) over() as total_count
   from public.vouchers v
   where (p_voucher_status is null or v.voucher_status = p_voucher_status)
@@ -365,6 +626,9 @@ as $$
     and (p_date is null or v.date = p_date)
     and (p_date_from is null or v.date >= p_date_from)
     and (p_date_to is null or v.date <= p_date_to)
+    and (p_settlement_status is null or v.settlement_status = p_settlement_status)
+    and (p_received_by_owner is null or v.settlement_received_by = p_received_by_owner)
+    and (p_created_by is null or v.created_by = p_created_by)
     and (
       p_q is null
       or v.sequence_number::text = regexp_replace(p_q, '\D', '', 'g')
