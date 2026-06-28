@@ -93,8 +93,8 @@
           </select>
         </div>
         <div class="extra-filter-field">
-          <label for="ledger-staff-filter">Staff</label>
-          <select id="ledger-staff-filter" title="Filter ledger by which staff member created the voucher">
+          <label for="ledger-staff-filter">Staff Name</label>
+          <select id="ledger-staff-filter" title="Filter ledger by which staff member made the voucher">
             <option value="">All Staff</option>
           </select>
         </div>
@@ -136,6 +136,10 @@
           <button class="btn btn-secondary" id="open-owner-mgmt-btn" title="Manage owners (Owner/Admin only)" hidden>
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             <span class="btn-label">Owners</span>
+          </button>
+          <button class="btn btn-secondary" id="open-staff-mgmt-btn" title="Manage staff names (Owner/Admin only)" hidden>
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span class="btn-label">Staff</span>
           </button>
           <div class="divider"></div>
           <button class="btn btn-secondary" id="logout-btn" title="Log out">
@@ -382,6 +386,13 @@
             <input type="tel" id="customer-phone-input" class="customer-input" placeholder="Phone (optional)">
           </div>
 
+          <div class="made-by-group">
+            <span class="control-label">Made By:</span>
+            <select id="made-by-staff-select" class="made-by-select" required>
+              <option value="">Select staff…</option>
+            </select>
+          </div>
+
           <div class="payment-method-group">
             <span class="control-label">Payment:</span>
             <div class="segmented-control">
@@ -437,6 +448,7 @@
             <h3 id="modal-voucher-id">#V-0000</h3>
             <span class="modal-date" id="modal-voucher-date">Date: --/--/----</span>
             <span class="modal-customer" id="modal-customer-name">Customer</span>
+            <span class="modal-made-by" id="modal-made-by"></span>
           </div>
           <button class="close-modal-btn" id="close-modal-btn" title="Close Modal">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -487,6 +499,7 @@
           </div>
           <div class="modal-footer-group">
             <button class="btn btn-secondary" id="print-btn">Print</button>
+            <button class="btn btn-secondary" id="print-thermal-btn" title="Print 80mm thermal receipt (XP-80T)">Receipt (80mm)</button>
             <button class="btn btn-primary" id="download-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Download
@@ -617,6 +630,31 @@
 
           <div class="owner-list" id="owner-list">
             <div class="list-loading" id="owner-list-loading" hidden>Loading owners…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Staff Management Modal (Owner/Admin only) -->
+    <div class="modal-overlay" id="staff-mgmt-modal">
+      <div class="modal-card owner-mgmt-card">
+        <div class="modal-header">
+          <div class="modal-title-info">
+            <h3>Staff Management</h3>
+          </div>
+          <button class="close-modal-btn" id="close-staff-mgmt-btn" title="Close Staff Management">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+
+        <div class="modal-body owner-mgmt-body">
+          <form class="owner-add-form" id="staff-add-form">
+            <input type="text" id="staff-add-name-input" placeholder="Staff name" required>
+            <button type="submit" class="btn btn-primary">Add Staff</button>
+          </form>
+
+          <div class="owner-list" id="staff-list">
+            <div class="list-loading" id="staff-list-loading" hidden>Loading staff…</div>
           </div>
         </div>
       </div>

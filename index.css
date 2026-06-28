@@ -622,6 +622,13 @@ textarea {
 
 .workspace-header {
   min-height: 70px;
+  /* Never compressed by flexbox to make room for .canvas-section -- without
+     this, a short viewport (landscape tablets especially) can squeeze the
+     header/footer below their own content's natural height, and the
+     overflow (default `visible`) spills past body's `overflow: hidden`,
+     making header/footer controls unreachable. See .workspace-footer and
+     .canvas-section for the other two pieces of this fix. */
+  flex-shrink: 0;
   padding: 0 32px;
   /* viewport-fit=cover lets the page draw under Safari's address bar --
      without this, the Ledger History toggle and logo can end up hidden
@@ -664,6 +671,13 @@ textarea {
 
 .canvas-section {
   flex: 1;
+  /* Explicit (rather than relying on the overflow-implied auto-minimum) --
+     this is what actually lets the section shrink below its content's
+     natural height instead of forcing .workspace to grow past the
+     viewport. The header/footer are protected from this same shrinkage by
+     their own flex-shrink: 0, so this section -- not them -- is the one
+     that absorbs a too-short viewport. */
+  min-height: 0;
   background-color: #0c111d;
   display: flex;
   flex-direction: column;
@@ -671,13 +685,20 @@ textarea {
   align-items: center;
   justify-content: flex-start;
   position: relative;
-  overflow: hidden;
-  /* Scoped to the drawing area only (not body/html) so the sidebar's
-     ledger list keeps its normal scroll. A palm resting just outside a
-     row-canvas's own touch-action:none bounds -- in the table borders,
-     row gaps, or voucher padding -- could otherwise still let Safari see
-     an unconstrained second touch point and start a pinch-zoom gesture. */
-  touch-action: none;
+  /* Vertical scroll is the safety net for when scaleVoucherToFit() still
+     can't make the toolbar + voucher fit the leftover space (e.g. a very
+     short landscape viewport) -- the voucher stays reachable by scrolling
+     instead of being clipped with no way to get to the rest of it. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* pan-y (not none) so that scroll still works via touch -- pinch-zoom is
+     not in the allowed list, so this keeps blocking the original bug this
+     was guarding against (a resting palm next to the Pencil tip during
+     drawing registering as a second touch point and starting a native
+     pinch-zoom). An active drawing stroke still blocks the browser's own
+     pan via draw()'s e.preventDefault() on pointermove, so this doesn't
+     fight palm rejection while actually drawing. */
+  touch-action: pan-y;
 }
 
 /* Floating Tools Bar */
@@ -1204,6 +1225,10 @@ textarea {
    ========================================================================== */
 .workspace-footer {
   min-height: 80px;
+  /* Same reasoning as .workspace-header's flex-shrink: 0 -- the Save
+     buttons live here, so this is the one box that must never be
+     compressed below what its content actually needs. */
+  flex-shrink: 0;
   padding: 12px 32px;
   /* Same viewport-fit=cover reasoning as .workspace-header, for the bottom
      edge (home indicator area) instead of the top. */
@@ -1268,6 +1293,30 @@ textarea {
   align-items: center;
   gap: 10px;
   flex-wrap: nowrap;
+}
+
+.made-by-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.made-by-select {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  min-width: 130px;
+}
+
+/* Required field left unselected -- a visible amber border flags it instead
+   of only failing silently at save time. */
+.made-by-select:invalid {
+  border-color: var(--color-warning);
 }
 
 /* Segmented Control Selector */
@@ -1467,6 +1516,13 @@ textarea {
   display: block;
   font-size: 0.85rem;
   color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.modal-made-by {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -1883,7 +1939,14 @@ textarea {
   padding: 16px 0;
 }
 
-@media (max-width: 900px) {
+/* Triggers on narrow WIDTH (portrait phones/small tablets, the original
+   case) OR short HEIGHT (landscape tablets -- iPad landscape is ~1080px
+   wide, Galaxy Tab A8 landscape is ~960-1280px wide, both comfortably over
+   the 900px width threshold, so without the height arm here landscape
+   tablets fell through to the spacious desktop-sized header/footer/toolbar
+   on what is actually a short viewport -- the main contributor to footer
+   controls getting squeezed off-screen on tablets in landscape). */
+@media (max-width: 900px), (max-height: 820px) {
   .sidebar {
     position: absolute;
     height: 100%;

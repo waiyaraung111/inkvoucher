@@ -11,7 +11,7 @@ let currentStatusFilter = 'all'; // all | active | paid | unpaid | void
 let currentDateRange = null; // null = All Dates, else {from, to} yyyy-mm-dd -- Ledger History's own date filter, independent of the Dashboard's
 let currentSettlementFilter = ''; // '' = All, else 'Not Received' | 'Received'
 let currentOwnerFilter = ''; // '' = All Owners, else an owners.id
-let currentStaffFilter = ''; // '' = All Staff, else a profiles.id
+let currentStaffFilter = ''; // '' = All Staff, else a staff_members.id (the actual person, not the login -- see made_by_staff_id)
 let isSaving = false;
 let companySettings = null;
 
@@ -34,6 +34,13 @@ let ownersById = new Map();
 let allProfiles = [];
 let profilesById = new Map();
 let editingOwnerId = null;
+
+// Staff Members (Staff Management) -- the actual person who made a voucher,
+// distinct from profiles/auth.users above (which is the, possibly shared,
+// login). Same cache/refresh pattern as owners.
+let allStaffMembers = [];
+let staffMembersById = new Map();
+let editingStaffId = null;
 
 // Drawing states
 let isDrawing = false;
@@ -93,6 +100,7 @@ const ledgerOwnerFilter = document.getElementById('ledger-owner-filter');
 const ledgerStaffFilter = document.getElementById('ledger-staff-filter');
 const customerNameInput = document.getElementById('customer-name-input');
 const customerPhoneInput = document.getElementById('customer-phone-input');
+const madeByStaffSelect = document.getElementById('made-by-staff-select');
 const saveOnlyBtn = document.getElementById('save-only-btn');
 const savePrintBtn = document.getElementById('save-print-btn');
 
@@ -117,6 +125,7 @@ const closeModalBtn = document.getElementById('close-modal-btn');
 const modalVoucherId = document.getElementById('modal-voucher-id');
 const modalVoucherDate = document.getElementById('modal-voucher-date');
 const modalCustomerName = document.getElementById('modal-customer-name');
+const modalMadeBy = document.getElementById('modal-made-by');
 const modalPaymentBadge = document.getElementById('modal-payment-badge');
 const modalStatusBadge = document.getElementById('modal-status-badge');
 const modalVoucherImg = document.getElementById('modal-voucher-img');
@@ -126,6 +135,7 @@ const downloadBtn = document.getElementById('download-btn');
 const markPaidBtn = document.getElementById('mark-paid-btn');
 const markUnpaidBtn = document.getElementById('mark-unpaid-btn');
 const printBtn = document.getElementById('print-btn');
+const printThermalBtn = document.getElementById('print-thermal-btn');
 
 // Owner Settlement Elements (voucher detail modal)
 const modalSettlementBadge = document.getElementById('modal-settlement-badge');
@@ -144,6 +154,15 @@ const ownerAddForm = document.getElementById('owner-add-form');
 const ownerAddNameInput = document.getElementById('owner-add-name-input');
 const ownerListEl = document.getElementById('owner-list');
 const ownerListLoading = document.getElementById('owner-list-loading');
+
+// Staff Management Elements
+const openStaffMgmtBtn = document.getElementById('open-staff-mgmt-btn');
+const staffMgmtModal = document.getElementById('staff-mgmt-modal');
+const closeStaffMgmtBtn = document.getElementById('close-staff-mgmt-btn');
+const staffAddForm = document.getElementById('staff-add-form');
+const staffAddNameInput = document.getElementById('staff-add-name-input');
+const staffListEl = document.getElementById('staff-list');
+const staffListLoading = document.getElementById('staff-list-loading');
 
 // Dashboard Elements
 const openDashboardBtn = document.getElementById('open-dashboard-btn');
@@ -228,8 +247,10 @@ function getActiveOwners() {
   return allOwners.filter((o) => o.active);
 }
 
-// Staff directory (profiles) -- used for the Ledger's "Staff" filter and to
-// resolve a settlement's "recorded by" id into a display name.
+// Login directory (profiles) -- used only to resolve a settlement's
+// "recorded by" id into a display name now (the Ledger's Staff Name filter
+// and the voucher's Made By are driven by staff_members below instead,
+// since several staff can share one login).
 async function loadProfiles() {
   const { data, error } = await supabaseClient.from('profiles').select('id, name, role').order('name');
   if (error) {
@@ -240,6 +261,25 @@ async function loadProfiles() {
   profilesById = new Map(allProfiles.map((p) => [p.id, p]));
 }
 
+// Staff Members (Staff Management) -- the actual person who made a
+// voucher. Loaded in full (active + disabled) so the Staff Management list
+// and the Ledger's "Staff Name" filter can show everyone ever added; only
+// active staff are offered in the voucher creation dropdown (see
+// getActiveStaffMembers()).
+async function loadStaffMembers() {
+  const { data, error } = await supabaseClient.from('staff_members').select('*').order('name');
+  if (error) {
+    console.error('Failed to load staff members:', error);
+    return;
+  }
+  allStaffMembers = data || [];
+  staffMembersById = new Map(allStaffMembers.map((s) => [s.id, s]));
+}
+
+function getActiveStaffMembers() {
+  return allStaffMembers.filter((s) => s.active);
+}
+
 function populateOwnerFilterSelect() {
   ledgerOwnerFilter.innerHTML = '<option value="">All Owners</option>' +
     allOwners.map((o) => `<option value="${o.id}">${escapeHtml(o.name)}${o.active ? '' : ' (disabled)'}</option>`).join('');
@@ -248,13 +288,22 @@ function populateOwnerFilterSelect() {
 
 function populateStaffFilterSelect() {
   ledgerStaffFilter.innerHTML = '<option value="">All Staff</option>' +
-    allProfiles.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    allStaffMembers.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}${s.active ? '' : ' (disabled)'}</option>`).join('');
   ledgerStaffFilter.value = currentStaffFilter;
 }
 
 function populateSettlementOwnerSelect() {
   settlementOwnerSelect.innerHTML = '<option value="">Select owner…</option>' +
     getActiveOwners().map((o) => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('');
+}
+
+// Required dropdown on the voucher creation form -- only active staff are
+// offered, but create_voucher re-validates active status server-side too.
+function populateMadeByStaffSelect() {
+  const previousValue = madeByStaffSelect.value;
+  madeByStaffSelect.innerHTML = '<option value="">Select staff…</option>' +
+    getActiveStaffMembers().map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  madeByStaffSelect.value = previousValue;
 }
 
 // Re-fetches the ledger from the server using the current search text,
@@ -271,7 +320,7 @@ async function reloadVouchers() {
   }
   if (currentSettlementFilter) params.p_settlement_status = currentSettlementFilter;
   if (currentOwnerFilter) params.p_received_by_owner = currentOwnerFilter;
-  if (currentStaffFilter) params.p_created_by = currentStaffFilter;
+  if (currentStaffFilter) params.p_made_by_staff_id = currentStaffFilter;
 
   const { data, error } = await supabaseClient.rpc('search_vouchers', params);
   if (error) {
@@ -494,7 +543,7 @@ function matchesCurrentFilters(v) {
 
   if (currentSettlementFilter && v.settlement_status !== currentSettlementFilter) return false;
   if (currentOwnerFilter && v.settlement_received_by !== currentOwnerFilter) return false;
-  if (currentStaffFilter && v.created_by !== currentStaffFilter) return false;
+  if (currentStaffFilter && v.made_by_staff_id !== currentStaffFilter) return false;
 
   if (currentSearchQuery) {
     const q = currentSearchQuery;
@@ -693,6 +742,158 @@ openOwnerMgmtBtn.addEventListener('click', openOwnerMgmt);
 closeOwnerMgmtBtn.addEventListener('click', closeOwnerMgmt);
 markSettlementReceivedBtn.addEventListener('click', handleMarkSettlementReceived);
 markSettlementNotReceivedBtn.addEventListener('click', handleMarkSettlementNotReceived);
+
+// --- Staff Management (Owner/Admin only -- enforced server-side too) ---
+// Mirrors Owner Management above exactly (same shape: id/name/active, same
+// add/update/set-active RPC pattern) -- kept as a separate, parallel
+// implementation rather than a shared abstraction, since owners and staff
+// are conceptually distinct entities that happen to share a shape today.
+
+async function openStaffMgmt() {
+  staffMgmtModal.classList.add('active');
+  editingStaffId = null;
+  staffListLoading.hidden = false;
+  await loadStaffMembers();
+  staffListLoading.hidden = true;
+  renderStaffList(allStaffMembers);
+}
+
+function closeStaffMgmt() {
+  staffMgmtModal.classList.remove('active');
+  editingStaffId = null;
+}
+
+function renderStaffList(staffMembers) {
+  staffListEl.querySelectorAll('.owner-row, .owner-edit-form, .owner-empty-row').forEach((el) => el.remove());
+
+  if (staffMembers.length === 0) {
+    staffListEl.insertAdjacentHTML('beforeend', '<div class="owner-empty-row">No staff names yet. Add one above.</div>');
+    return;
+  }
+
+  staffMembers.forEach((s) => {
+    if (editingStaffId === s.id) {
+      staffListEl.insertAdjacentHTML('beforeend', `
+        <form class="owner-edit-form" data-staff-id="${s.id}">
+          <input type="text" class="owner-edit-input" value="${escapeHtml(s.name)}" required>
+          <button type="submit" class="btn btn-secondary">Save</button>
+          <button type="button" class="btn btn-secondary staff-cancel-edit-btn">Cancel</button>
+        </form>
+      `);
+      return;
+    }
+
+    staffListEl.insertAdjacentHTML('beforeend', `
+      <div class="owner-row" data-staff-id="${s.id}">
+        <div class="owner-row-info">
+          <span class="owner-row-name">${escapeHtml(s.name)}</span>
+          <span class="status-pill sm ${s.active ? 'is-paid' : 'is-void'}">${s.active ? 'Active' : 'Disabled'}</span>
+        </div>
+        <div class="owner-row-actions">
+          <button class="btn btn-secondary staff-edit-btn" data-staff-id="${s.id}">Edit</button>
+          <button class="btn btn-secondary ${s.active ? 'text-danger' : ''} staff-toggle-btn" data-staff-id="${s.id}" data-active="${s.active}">${s.active ? 'Disable' : 'Enable'}</button>
+        </div>
+      </div>
+    `);
+  });
+}
+
+// Refreshes every place the staff cache feeds: the management list itself,
+// the Ledger's "Staff Name" filter, and the voucher creation dropdown.
+async function refreshStaffEverywhere() {
+  await loadStaffMembers();
+  renderStaffList(allStaffMembers);
+  populateStaffFilterSelect();
+  populateMadeByStaffSelect();
+}
+
+staffAddForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = staffAddNameInput.value.trim();
+  if (!name) return;
+
+  const submitBtn = staffAddForm.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  const { data, error } = await supabaseClient.rpc('add_staff_member', { p_name: name });
+  submitBtn.disabled = false;
+
+  if (error) {
+    console.error('Failed to add staff member:', error);
+    showToast('Failed to add staff: ' + describeRpcError(error), 'error');
+    return;
+  }
+
+  staffAddNameInput.value = '';
+  await refreshStaffEverywhere();
+  showToast(`Staff "${data.name}" added.`, 'success');
+});
+
+staffListEl.addEventListener('click', async (e) => {
+  const editBtn = e.target.closest('.staff-edit-btn');
+  if (editBtn) {
+    editingStaffId = editBtn.dataset.staffId;
+    renderStaffList(allStaffMembers);
+    return;
+  }
+
+  const cancelBtn = e.target.closest('.staff-cancel-edit-btn');
+  if (cancelBtn) {
+    editingStaffId = null;
+    renderStaffList(allStaffMembers);
+    return;
+  }
+
+  const toggleBtn = e.target.closest('.staff-toggle-btn');
+  if (toggleBtn) {
+    const staffId = toggleBtn.dataset.staffId;
+    const isActive = toggleBtn.dataset.active === 'true';
+    const staff = staffMembersById.get(staffId);
+    const verb = isActive ? 'disable' : 're-enable';
+    const ok = await showConfirm(
+      `Are you sure you want to ${verb} staff name "${staff ? staff.name : ''}"?`,
+      { confirmLabel: isActive ? 'Disable' : 'Enable', danger: isActive }
+    );
+    if (!ok) return;
+
+    toggleBtn.disabled = true;
+    const { data, error } = await supabaseClient.rpc('set_staff_member_active', { p_staff_id: staffId, p_active: !isActive });
+    toggleBtn.disabled = false;
+
+    if (error) {
+      console.error('Failed to update staff member:', error);
+      showToast('Failed to update staff: ' + describeRpcError(error), 'error');
+      return;
+    }
+
+    await refreshStaffEverywhere();
+    showToast(`Staff "${data.name}" ${data.active ? 'enabled' : 'disabled'}.`, 'success');
+  }
+});
+
+staffListEl.addEventListener('submit', async (e) => {
+  const form = e.target.closest('.owner-edit-form');
+  if (!form) return;
+  e.preventDefault();
+
+  const staffId = form.dataset.staffId;
+  const input = form.querySelector('.owner-edit-input');
+  const name = input.value.trim();
+  if (!name) return;
+
+  const { data, error } = await supabaseClient.rpc('update_staff_member', { p_staff_id: staffId, p_name: name });
+  if (error) {
+    console.error('Failed to update staff member:', error);
+    showToast('Failed to update staff: ' + describeRpcError(error), 'error');
+    return;
+  }
+
+  editingStaffId = null;
+  await refreshStaffEverywhere();
+  showToast(`Staff renamed to "${data.name}".`, 'success');
+});
+
+openStaffMgmtBtn.addEventListener('click', openStaffMgmt);
+closeStaffMgmtBtn.addEventListener('click', closeStaffMgmt);
 
 // --- Toast notifications (replaces window.alert for success/error feedback) ---
 const toastContainer = document.getElementById('toast-container');
@@ -1383,6 +1584,9 @@ function updateModalFromVoucher(voucher) {
   modalCustomerName.textContent = voucher.customer_phone
     ? `${voucher.customer_name} · ${voucher.customer_phone}`
     : voucher.customer_name;
+  // made_by_staff_name is null on vouchers saved before this feature
+  // existed -- nothing to show for those rather than a misleading blank line.
+  modalMadeBy.textContent = voucher.made_by_staff_name ? `Made By: ${voucher.made_by_staff_name}` : '';
   modalPaymentBadge.textContent = voucher.payment_method;
   modalPaymentBadge.className = `badge payment-badge ${
     voucher.payment_method === 'Cash' ? '' : (voucher.payment_method === 'Transfer' ? 'transfer-method' : 'paynow-method')
@@ -1459,6 +1663,10 @@ function clearVoucherFields() {
   grandTotalEl.classList.add('is-zero');
   customerNameInput.value = '';
   customerPhoneInput.value = '';
+  // Reset, not sticky -- on a tablet shared by several staff, carrying the
+  // previous voucher's selection forward risks silently misattributing the
+  // next one to whoever made the last sale.
+  madeByStaffSelect.value = '';
   loadCurrentDate();
 }
 
@@ -1484,6 +1692,16 @@ function setSaveButtonsLoading(loading) {
 
 async function handleSaveVoucher({ print = false } = {}) {
   if (isSaving) return; // belt-and-suspenders against a double-click slipping through
+
+  // Required -- checked before reserve_voucher_sequence_number below, not
+  // after, because Postgres sequences don't roll back: failing this check
+  // post-reservation would permanently burn a voucher number for a save
+  // that was never going to succeed.
+  const madeByStaffId = madeByStaffSelect.value;
+  if (!madeByStaffId) {
+    showToast('Select who made this voucher (Made By) before saving.', 'error');
+    return;
+  }
 
   const paymentMethodEl = document.querySelector('input[name="payment-method"]:checked');
   const paymentMethod = paymentMethodEl ? paymentMethodEl.value : 'Cash';
@@ -1553,6 +1771,7 @@ async function handleSaveVoucher({ print = false } = {}) {
       p_drawing_data: drawingData,
       p_image_path: imagePath,
       p_sequence_number: reservedSeqNum,
+      p_made_by_staff_id: madeByStaffId,
     });
     if (createError) throw createError;
 
@@ -1588,7 +1807,7 @@ async function handleSaveVoucher({ print = false } = {}) {
     }
 
     if (print) {
-      await printVoucher(finalVoucher);
+      await PrintService.printVoucher(finalVoucher);
       showToast(`Voucher ${displayId} saved and sent to print.`, 'success');
     } else {
       showToast(`Voucher ${displayId} saved.`, 'success');
@@ -1622,7 +1841,7 @@ async function handleSaveVoucher({ print = false } = {}) {
 // one shared loading flag covers all of them -- disables the row while an
 // RPC is in flight to stop a double-tap firing it twice.
 function setModalActionsLoading(loading) {
-  [markPaidBtn, markUnpaidBtn, voidBtn, printBtn, downloadBtn, markSettlementReceivedBtn, markSettlementNotReceivedBtn].forEach((btn) => {
+  [markPaidBtn, markUnpaidBtn, voidBtn, printBtn, printThermalBtn, downloadBtn, markSettlementReceivedBtn, markSettlementNotReceivedBtn].forEach((btn) => {
     btn.disabled = loading;
   });
 }
@@ -1838,32 +2057,162 @@ function buildPrintHtml(imageUrl, voucher) {
 </html>`;
 }
 
-async function printVoucher(voucher) {
-  const { data: updated, error } = await supabaseClient.rpc('log_voucher_print', { p_voucher_id: voucher.id });
-  if (error) {
-    console.error('Error logging print:', error);
-    showToast('Failed to print: ' + describeRpcError(error), 'error');
-    return voucher;
-  }
-
-  patchVoucherInLocalState(updated);
-
-  const url = await getSignedImageUrl(updated.image_path);
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(buildPrintHtml(url, updated));
-    printWindow.document.close();
-    printWindow.onload = () => printWindow.print();
-  } else {
-    showToast('Could not open the print window -- check your browser\'s pop-up blocker.', 'error');
-  }
-  return updated;
+// Phase 1 of 80mm thermal receipt printing: plain browser window.print()
+// through the Android Print Framework to whatever print service the
+// printer (e.g. XP-80T) registers -- no ESC/POS, no handwriting images, no
+// item lines yet (handwriting images are a separate, later, opt-in toggle --
+// item NAMES only exist as ink in the canvas, with no typed equivalent, so
+// they can never appear as text here regardless). Deliberately omits
+// Staff/Made By -- that's internal-only and must never appear on anything
+// customer-facing, same rule as the A5 voucher/PDF (see buildPrintHtml
+// below, which also never reads it).
+//
+// Comma-grouped, no currency symbol, no decimals unless the amount actually
+// has cents -- matches this shop's real currency convention, distinct from
+// fmtMoney()'s '$X.XX' used elsewhere (Dashboard, A5) which this
+// deliberately does not touch.
+function formatReceiptAmount(n) {
+  return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
+
+function buildThermalReceiptHtml(voucher) {
+  const displayId = formatVoucherID(voucher.sequence_number);
+  const dateParts = voucher.date.split('-');
+  const dateDisplay = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+  const status = getStatusBadgeInfo(voucher);
+  const shopName = (companySettings && companySettings.company_name) || 'InkVoucher';
+  const shopNote = companySettings
+    ? [companySettings.address, companySettings.phone].filter(Boolean).join(' · ')
+    : '';
+  const customerLine = voucher.customer_phone
+    ? `${voucher.customer_name} · ${voucher.customer_phone}`
+    : voucher.customer_name;
+  // Saved items always have all 8 rows (many zeroed out for whatever the
+  // customer didn't fill in) -- only the ones actually filled in are worth
+  // printing, same filter renderCompositeVoucher() uses for the A5 PNG.
+  const itemRows = (voucher.items || []).filter((it) => Number(it.amount) > 0);
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${displayId}</title>
+<style>
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+  html, body {
+    width: 80mm;
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+  }
+  .receipt {
+    width: 72mm;
+    font-size: 11px;
+    line-height: 1.35;
+    font-family: 'Courier New', Courier, monospace;
+  }
+  .center { text-align: center; }
+  .bold { font-weight: 700; }
+  .divider { border-top: 1px dashed #000; margin: 6px 0; }
+  .row { display: flex; justify-content: space-between; gap: 6px; }
+  .total { font-size: 14px; font-weight: 700; }
+  @media print {
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="receipt">
+    <div class="center bold">${escapeHtml(shopName)}</div>
+    ${shopNote ? `<div class="center">${escapeHtml(shopNote)}</div>` : ''}
+    <div class="divider"></div>
+    <div class="row"><span>Voucher #</span><span class="bold">${displayId}</span></div>
+    <div class="row"><span>Date</span><span>${dateDisplay}</span></div>
+    <div class="row"><span>Customer</span><span>${escapeHtml(customerLine)}</span></div>
+    <div class="row"><span>Payment</span><span>${escapeHtml(voucher.payment_method)}</span></div>
+    <div class="row"><span>Status</span><span class="bold">${status.label}</span></div>
+    ${itemRows.length > 0 ? `
+    <div class="divider"></div>
+    <div class="bold">Items</div>
+    ${itemRows.map((it, idx) => `<div>${idx + 1}) ${formatReceiptAmount(it.qty)} × ${formatReceiptAmount(it.price)} = ${formatReceiptAmount(it.amount)}</div>`).join('\n    ')}
+    ` : ''}
+    <div class="divider"></div>
+    <div class="row total"><span>Total</span><span>${formatReceiptAmount(voucher.total_amount)}</span></div>
+    <div class="divider"></div>
+    <div class="center">Thank you!</div>
+  </div>
+</body>
+</html>`;
+}
+
+// All printing goes through here -- printVoucher/printThermalReceipt are
+// the only two entry points the rest of the app calls. Keeping window.print()
+// confined to this object means a later swap to a native Android/XPrinter
+// SDK only touches these two methods, not every call site.
+const PrintService = {
+  async printVoucher(voucher) {
+    const { data: updated, error } = await supabaseClient.rpc('log_voucher_print', { p_voucher_id: voucher.id });
+    if (error) {
+      console.error('Error logging print:', error);
+      showToast('Failed to print: ' + describeRpcError(error), 'error');
+      return voucher;
+    }
+
+    patchVoucherInLocalState(updated);
+
+    const url = await getSignedImageUrl(updated.image_path);
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(buildPrintHtml(url, updated));
+      printWindow.document.close();
+      printWindow.onload = () => printWindow.print();
+    } else {
+      showToast('Could not open the print window -- check your browser\'s pop-up blocker.', 'error');
+    }
+    return updated;
+  },
+
+  async printThermalReceipt(voucher) {
+    const { data: updated, error } = await supabaseClient.rpc('log_voucher_print', { p_voucher_id: voucher.id });
+    if (error) {
+      console.error('Error logging print:', error);
+      showToast('Failed to print: ' + describeRpcError(error), 'error');
+      return voucher;
+    }
+
+    patchVoucherInLocalState(updated);
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(buildThermalReceiptHtml(updated));
+      printWindow.document.close();
+      printWindow.onload = () => printWindow.print();
+    } else {
+      showToast('Could not open the print window -- check your browser\'s pop-up blocker.', 'error');
+    }
+    return updated;
+  },
+};
 
 async function handlePrintActiveVoucher() {
   if (!activeVoucher) return;
   setModalActionsLoading(true);
-  activeVoucher = await printVoucher(activeVoucher);
+  activeVoucher = await PrintService.printVoucher(activeVoucher);
+  setModalActionsLoading(false);
+  updateModalFromVoucher(activeVoucher);
+}
+
+async function handlePrintThermalActiveVoucher() {
+  if (!activeVoucher) return;
+  setModalActionsLoading(true);
+  activeVoucher = await PrintService.printThermalReceipt(activeVoucher);
   setModalActionsLoading(false);
   updateModalFromVoucher(activeVoucher);
 }
@@ -2167,6 +2516,7 @@ downloadBtn.addEventListener('click', handleDownloadActiveVoucher);
 markPaidBtn.addEventListener('click', handleMarkPaid);
 markUnpaidBtn.addEventListener('click', handleMarkUnpaid);
 printBtn.addEventListener('click', handlePrintActiveVoucher);
+printThermalBtn.addEventListener('click', handlePrintThermalActiveVoucher);
 
 // Dashboard
 openDashboardBtn.addEventListener('click', openDashboard);
@@ -2217,12 +2567,15 @@ async function startApp() {
       loadCurrentUserProfile(),
       loadOwners(),
       loadProfiles(),
+      loadStaffMembers(),
     ]);
     companySettings = company;
 
     openOwnerMgmtBtn.hidden = !isOwnerAdmin();
+    openStaffMgmtBtn.hidden = !isOwnerAdmin();
     populateOwnerFilterSelect();
     populateStaffFilterSelect();
+    populateMadeByStaffSelect();
 
     await reloadVouchers();
 

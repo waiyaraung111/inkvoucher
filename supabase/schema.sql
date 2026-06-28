@@ -65,6 +65,18 @@ create table public.owners (
   created_at timestamptz not null default now()
 );
 
+-- ---------- staff_members (the actual person who made a voucher --
+-- distinct from auth.users/profiles, which may be a login shared by
+-- several staff. Disabled, never hard-deleted, so historical vouchers'
+-- made_by_staff_id stays valid.) ----------
+create table public.staff_members (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  active boolean not null default true,
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+
 -- ---------- vouchers ----------
 create table public.vouchers (
   id uuid primary key default gen_random_uuid(),
@@ -93,7 +105,15 @@ create table public.vouchers (
   settlement_status text not null default 'Not Received' check (settlement_status in ('Not Received','Received')),
   settlement_received_by uuid references public.owners(id),
   settlement_at timestamptz,
-  settlement_recorded_by uuid references auth.users(id)
+  settlement_recorded_by uuid references auth.users(id),
+  -- ---- Staff Name Tracking: who actually made the voucher, independent of
+  -- which shared login was used. made_by_staff_name is a snapshot taken at
+  -- creation time (see create_voucher below), not a live join, so renaming
+  -- a staff_members row later never rewrites already-saved vouchers.
+  -- Nullable because vouchers created before this feature existed have no
+  -- staff to attribute; create_voucher requires it for every NEW voucher. ----
+  made_by_staff_id uuid references public.staff_members(id),
+  made_by_staff_name text
 );
 
 create index vouchers_created_at_idx on public.vouchers (created_at desc);
@@ -103,6 +123,7 @@ create index vouchers_customer_phone_idx on public.vouchers (customer_phone);
 create index vouchers_date_idx on public.vouchers (date);
 create index vouchers_settlement_status_idx on public.vouchers (settlement_status);
 create index vouchers_settlement_received_by_idx on public.vouchers (settlement_received_by);
+create index vouchers_made_by_staff_id_idx on public.vouchers (made_by_staff_id);
 
 -- ---------- print_events (audit trail behind print_count/printed_at) ----------
 create table public.print_events (
@@ -133,6 +154,7 @@ alter table public.vouchers enable row level security;
 alter table public.print_events enable row level security;
 alter table public.owners enable row level security;
 alter table public.settlement_audit_log enable row level security;
+alter table public.staff_members enable row level security;
 
 create policy "Staff can view profiles" on public.profiles
   for select to authenticated using (true);
@@ -174,6 +196,11 @@ create policy "Staff can view settlement audit log" on public.settlement_audit_l
   for select to authenticated using (true);
 -- No insert policy -- rows are only ever created via the settlement RPCs below.
 
+create policy "Staff can view staff members" on public.staff_members
+  for select to authenticated using (true);
+-- No insert/update/delete policy -- mutations only via add_staff_member/
+-- update_staff_member/set_staff_member_active below, which enforce Owner/Admin.
+
 create policy "Staff can upload voucher images" on storage.objects
   for insert to authenticated with check (bucket_id = 'voucher-images');
 create policy "Staff can view voucher images" on storage.objects
@@ -211,7 +238,8 @@ create or replace function public.create_voucher(
   p_items jsonb,
   p_drawing_data jsonb,
   p_image_path text,
-  p_sequence_number integer
+  p_sequence_number integer,
+  p_made_by_staff_id uuid default null
 )
 returns public.vouchers
 language plpgsql
@@ -228,6 +256,7 @@ declare
   v_voucher public.vouchers;
   v_initial_payment_status text;
   v_initial_paid_at timestamptz;
+  v_staff public.staff_members;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required' using errcode = '28000';
@@ -235,6 +264,22 @@ begin
 
   if p_customer_name is null or trim(p_customer_name) = '' then
     raise exception 'customer_name is required' using errcode = '23514';
+  end if;
+
+  -- Made By / Staff Name is required on every voucher (several staff can
+  -- share one login, so created_by/auth.uid() above doesn't tell you who
+  -- actually made it) -- validated server-side, not just a required <select>
+  -- in the UI, and snapshotted into made_by_staff_name so a later rename
+  -- doesn't rewrite this voucher's history.
+  if p_made_by_staff_id is null then
+    raise exception 'Made By staff name is required';
+  end if;
+  select * into v_staff from public.staff_members where id = p_made_by_staff_id;
+  if not found then
+    raise exception 'Staff member not found' using errcode = 'P0002';
+  end if;
+  if not v_staff.active then
+    raise exception 'Staff member is disabled';
   end if;
 
   -- Recompute every row's amount server-side -- never trust a client-sent total.
@@ -263,11 +308,11 @@ begin
   insert into public.vouchers (
     sequence_number, created_by, customer_name, customer_phone, date,
     payment_method, items, drawing_data, total_amount, image_path,
-    payment_status, paid_at
+    payment_status, paid_at, made_by_staff_id, made_by_staff_name
   ) values (
     p_sequence_number, auth.uid(), trim(p_customer_name), p_customer_phone, p_date,
     p_payment_method, v_sanitized_items, p_drawing_data, v_total, p_image_path,
-    v_initial_payment_status, v_initial_paid_at
+    v_initial_payment_status, v_initial_paid_at, p_made_by_staff_id, v_staff.name
   )
   returning * into v_voucher;
 
@@ -489,6 +534,99 @@ end;
 $$;
 grant execute on function public.set_owner_active to authenticated;
 
+-- ============================================================
+-- Staff Management RPCs (Owner/Admin only -- never a hard delete). Reuses
+-- is_owner_admin() above. staff_members is the roster of actual people;
+-- profiles/auth.users remains the (possibly shared) login.
+-- ============================================================
+create or replace function public.add_staff_member(p_name text)
+returns public.staff_members
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_staff public.staff_members;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can manage staff names' using errcode = '42501';
+  end if;
+  if p_name is null or trim(p_name) = '' then
+    raise exception 'name is required';
+  end if;
+
+  insert into public.staff_members (name, created_by)
+  values (trim(p_name), auth.uid())
+  returning * into v_staff;
+
+  return v_staff;
+end;
+$$;
+grant execute on function public.add_staff_member to authenticated;
+
+create or replace function public.update_staff_member(p_staff_id uuid, p_name text)
+returns public.staff_members
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_staff public.staff_members;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can manage staff names' using errcode = '42501';
+  end if;
+  if p_name is null or trim(p_name) = '' then
+    raise exception 'name is required';
+  end if;
+
+  update public.staff_members set name = trim(p_name)
+  where id = p_staff_id
+  returning * into v_staff;
+
+  if not found then
+    raise exception 'Staff member not found' using errcode = 'P0002';
+  end if;
+
+  return v_staff;
+end;
+$$;
+grant execute on function public.update_staff_member to authenticated;
+
+-- Disable/re-enable -- staff names are never permanently deleted, since
+-- past vouchers' made_by_staff_id references them historically.
+create or replace function public.set_staff_member_active(p_staff_id uuid, p_active boolean)
+returns public.staff_members
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_staff public.staff_members;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can manage staff names' using errcode = '42501';
+  end if;
+
+  update public.staff_members set active = p_active
+  where id = p_staff_id
+  returning * into v_staff;
+
+  if not found then
+    raise exception 'Staff member not found' using errcode = 'P0002';
+  end if;
+
+  return v_staff;
+end;
+$$;
+grant execute on function public.set_staff_member_active to authenticated;
+
 create or replace function public.mark_voucher_settlement_received(p_voucher_id uuid, p_owner_id uuid)
 returns public.vouchers
 language plpgsql
@@ -593,6 +731,7 @@ create or replace function public.search_vouchers(
   p_settlement_status text default null,
   p_received_by_owner uuid default null,
   p_created_by uuid default null,
+  p_made_by_staff_id uuid default null,
   p_limit int default 25,
   p_offset int default 0
 )
@@ -604,6 +743,7 @@ returns table (
   voided_at timestamptz, created_by uuid,
   settlement_status text, settlement_received_by uuid,
   settlement_at timestamptz, settlement_recorded_by uuid,
+  made_by_staff_id uuid, made_by_staff_name text,
   total_count bigint
 )
 language sql stable
@@ -616,6 +756,7 @@ as $$
     v.created_at, v.voided_at, v.created_by,
     v.settlement_status, v.settlement_received_by,
     v.settlement_at, v.settlement_recorded_by,
+    v.made_by_staff_id, v.made_by_staff_name,
     count(*) over() as total_count
   from public.vouchers v
   where (p_voucher_status is null or v.voucher_status = p_voucher_status)
@@ -629,6 +770,7 @@ as $$
     and (p_settlement_status is null or v.settlement_status = p_settlement_status)
     and (p_received_by_owner is null or v.settlement_received_by = p_received_by_owner)
     and (p_created_by is null or v.created_by = p_created_by)
+    and (p_made_by_staff_id is null or v.made_by_staff_id = p_made_by_staff_id)
     and (
       p_q is null
       or v.sequence_number::text = regexp_replace(p_q, '\D', '', 'g')
