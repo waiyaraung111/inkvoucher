@@ -245,57 +245,13 @@ textarea {
   height: 14px;
 }
 
-.date-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 24px 0;
-}
-
-.date-filter-select {
-  flex: 1;
-  min-width: 0; /* lets the select itself shrink instead of pushing the clear button out */
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: 0.8rem;
-  padding: 7px 10px;
-  border-radius: 8px;
-}
-
-.date-filter-clear-btn {
-  flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: 50%;
-  transition: var(--transition-smooth);
-}
-
-.date-filter-clear-btn:hover {
-  background-color: var(--bg-card-hover);
-  color: var(--text-primary);
-}
-
-.date-filter-clear-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* Stacked (not side-by-side) so the from/to inputs and Apply button never
-   have to fight for the sidebar's ~270px of usable width. */
+/* Stacked (not side-by-side) so the from/to inputs never have to fight for
+   the Filters modal's narrow field width. */
 .date-filter-custom-row {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 24px 0;
+  padding-top: 10px;
 }
 
 .date-filter-custom-field {
@@ -320,27 +276,9 @@ textarea {
   padding: 5px 8px;
 }
 
-.date-filter-apply-btn {
-  align-self: flex-end;
-  background-color: var(--color-accent);
-  color: white;
-  border: none;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 6px 14px;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  transition: var(--transition-smooth);
-}
-
-.date-filter-apply-btn:hover {
-  background-color: var(--color-accent-hover);
-}
-
 .filter-chip-row {
   display: flex;
   gap: 6px;
-  padding: 0 24px 16px;
   flex-wrap: wrap;
 }
 
@@ -367,40 +305,125 @@ textarea {
   color: white;
 }
 
-/* Owner Settlement / Received By / Staff -- stacked label+select pairs,
-   same reasoning as .date-filter-custom-row: side-by-side would fight for
-   the sidebar's ~270px of usable width. */
-.extra-filter-row {
+/* ==========================================================================
+   Ledger Filters -- sidebar trigger + active chips. The controls
+   themselves live in the Filters modal below; this is just the always-
+   visible summary/entry-point so the sidebar stays down to search + this
+   button + result count + the list itself.
+   ========================================================================== */
+.filters-trigger-row {
+  padding: 12px 24px 0;
+}
+
+.filters-trigger-btn {
+  width: 100%;
+}
+
+.filters-badge {
+  margin-left: auto;
+  background-color: var(--color-accent);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  padding: 0 5px;
+}
+
+.active-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 24px 0;
+}
+
+.active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--color-accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 6px 4px 10px;
+  border-radius: var(--radius-pill);
+}
+
+.active-chip-remove {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 2px;
+  cursor: pointer;
+  display: inline-flex;
+  opacity: 0.75;
+}
+
+.active-chip-remove:hover {
+  opacity: 1;
+}
+
+/* ==========================================================================
+   Filters Modal
+   ========================================================================== */
+.filters-modal-card {
+  width: min(440px, 92vw);
+}
+
+.filters-modal-body {
+  align-items: stretch;
+  gap: 20px;
+}
+
+.filters-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.filters-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+
+.filters-field {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 24px 14px;
 }
 
-.extra-filter-field {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.extra-filter-field label {
-  font-size: 0.75rem;
+.filters-field > label {
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--text-secondary);
-  flex-shrink: 0;
 }
 
-.extra-filter-field select {
-  flex: 1;
-  min-width: 0;
-  max-width: 150px;
+.filters-field select {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 0.78rem;
-  padding: 6px 8px;
+  font-size: 0.85rem;
+  padding: 8px 10px;
   border-radius: 8px;
+}
+
+/* 6 segments (All/Today/Yesterday/This Week/This Month/Custom) don't fit
+   one row at the modal's width -- wraps to 2 rows instead of overflowing
+   or shrinking labels unreadably small. */
+.filters-date-segmented {
+  flex-wrap: wrap;
 }
 
 .result-count {
@@ -796,6 +819,39 @@ textarea {
   min-width: 40px;
 }
 
+/* Bulk Set All Rows (Handwriting/Typing) -- same icons as the per-row
+   toggle, sized for a standalone toolbar control rather than a tight
+   table cell. */
+.set-all-mode-group {
+  display: flex;
+  gap: 6px;
+}
+
+.set-all-mode-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-smooth);
+}
+
+.set-all-mode-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.set-all-mode-btn:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
 /* ==========================================================================
    Paper Voucher Styling ( Lined hybrid layout )
    ========================================================================== */
@@ -1028,6 +1084,61 @@ textarea {
 .clear-row-btn:hover {
   background-color: rgba(15, 23, 42, 0.25);
   color: rgba(15, 23, 42, 0.95);
+}
+
+/* Per-row Handwriting/Typing mode toggle -- mirrors .clear-row-btn's
+   positioning on the opposite edge. Deliberately NOT hover-gated like
+   .clear-row-btn: this app runs on touch tablets first, where :hover
+   isn't a reliable discoverability mechanism, and choosing input mode is
+   a primary action staff need to see without hovering. */
+.row-mode-toggle-btn {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  background-color: rgba(15, 23, 42, 0.1);
+  color: rgba(15, 23, 42, 0.55);
+  border: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-smooth);
+}
+
+.row-mode-toggle-btn svg {
+  width: 11px;
+  height: 11px;
+}
+
+.row-mode-toggle-btn:hover {
+  background-color: rgba(15, 23, 42, 0.25);
+  color: rgba(15, 23, 42, 0.95);
+}
+
+/* Typed item-name input -- shown instead of .row-canvas when a row is in
+   typing mode. Left/right padding clears the mode toggle and clear
+   buttons, which stay fixed in their corners regardless of mode. */
+.row-typed-input {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  padding: 4px 28px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-serif);
+  font-size: 0.85rem;
+  color: rgba(15, 23, 42, 0.9);
+  outline: none;
+}
+
+.row-typed-input:focus {
+  background-color: rgba(251, 191, 36, 0.08);
 }
 
 /* Inputs styling inside receipt columns */

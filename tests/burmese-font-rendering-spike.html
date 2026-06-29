@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Burmese Font Rendering Spike</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Myanmar:wght@400;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; padding: 24px; }
+  h1 { font-size: 1.1rem; }
+  p { color: #94a3b8; font-size: 0.85rem; max-width: 640px; }
+  .test-row { margin-bottom: 20px; }
+  .label { font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; }
+  canvas {
+    background: #fef9c3;
+    border: 1px solid #334155;
+    display: block;
+    /* Real canvas is 564x93 (the exact colDescWidth/rowHeight
+       renderCompositeVoucher() uses for one item row, already at 2x export
+       resolution) -- shown larger on screen via CSS so it's inspectable,
+       without changing what's actually rendered into the pixel buffer. */
+    width: 564px;
+    height: 93px;
+    max-width: 100%;
+  }
+  button { margin-top: 16px; margin-right: 8px; padding: 8px 16px; cursor: pointer; }
+  #status { margin-top: 12px; font-size: 0.8rem; color: #f59e0b; }
+  @media print {
+    body { background: white; color: black; }
+    button, #status, p { display: none; }
+  }
+</style>
+</head>
+<body>
+  <h1>Burmese (Myanmar) Canvas Font Rendering Spike</h1>
+  <p>
+    Standalone test, not wired into the real app. Draws item-name text onto a
+    canvas at the exact same dimensions and font size renderCompositeVoucher()
+    in app.js uses for one voucher row (564&times;93px, bold 18px), with Noto
+    Sans Myanmar added to the font stack ahead of Courier Prime so Myanmar
+    codepoints resolve to a font that actually has those glyphs. If this looks
+    right, the same font-stack change is safe to carry into the real renderer
+    later for typed item names.
+  </p>
+
+  <div class="test-row">
+    <div class="label">1. English only</div>
+    <canvas id="canvas-en"></canvas>
+  </div>
+  <div class="test-row">
+    <div class="label">2. Burmese only (includes a stacked/conjunct consonant -- a common Myanmar Unicode rendering stress point)</div>
+    <canvas id="canvas-my"></canvas>
+  </div>
+  <div class="test-row">
+    <div class="label">3. Mixed English + Burmese + Myanmar digits</div>
+    <canvas id="canvas-mixed"></canvas>
+  </div>
+  <div class="test-row">
+    <div class="label">4. Long Burmese item name (wrap/overflow check at real column width)</div>
+    <canvas id="canvas-long"></canvas>
+  </div>
+
+  <button id="print-btn">Print this page (tests the print path)</button>
+  <button id="download-btn">Download canvas 2 (Burmese) as PNG</button>
+  <div id="status"></div>
+
+  <script>
+    // Same effective scale renderCompositeVoucher() uses: a 564x93 cell
+    // (colDescWidth x rowHeight) at the export canvas's native 2x
+    // resolution -- not scaled up further here.
+    const ROWS = [
+      { id: 'canvas-en', text: 'Galvanized Steel Pipe 1/2 inch' },
+      { id: 'canvas-my', text: 'မင်္ဂလာပါ - သံပိုက်' },
+      { id: 'canvas-mixed', text: 'Steel Pipe သံပိုက် Qty ၂ ခု' },
+      { id: 'canvas-long', text: 'ဂဠ်ဗနိုက်ဇ် သံပိုက် တစ်လက်မခွဲ အရှည် ၆ ပေ' },
+    ];
+
+    function draw(id, text) {
+      const canvas = document.getElementById(id);
+      canvas.width = 564;
+      canvas.height = 93;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fef9c3';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 12, canvas.height / 2, canvas.width - 24);
+    }
+
+    function drawAll() {
+      ROWS.forEach((r) => draw(r.id, r.text));
+    }
+
+    drawAll();
+
+    // Fonts can still be loading on first paint -- redraw once confirmed
+    // ready so the test can't accidentally pass/fail on a fallback font.
+    const statusEl = document.getElementById('status');
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        drawAll();
+        // Bold specifically -- that's the only weight the canvas above
+        // actually draws with (ctx.font = 'bold 18px ...'). Checking the
+        // default (regular/400) weight here would report false even when
+        // the bold weight that matters is loaded fine.
+        statusEl.textContent = document.fonts.check('bold 18px "Noto Sans Myanmar"')
+          ? 'Noto Sans Myanmar (bold) confirmed loaded -- canvases above reflect it, not a fallback font.'
+          : 'WARNING: Noto Sans Myanmar (bold) did NOT report as loaded -- canvases above may be showing a fallback font instead.';
+      });
+    }
+
+    document.getElementById('print-btn').addEventListener('click', () => window.print());
+    document.getElementById('download-btn').addEventListener('click', () => {
+      const canvas = document.getElementById('canvas-my');
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL('image/png');
+      link.download = 'burmese-canvas-test.png';
+      link.click();
+    });
+  </script>
+</body>
+</html>

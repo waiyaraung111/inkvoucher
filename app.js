@@ -7,11 +7,32 @@ let currentVouchers = [];
 let activeVoucher = null;
 let nextSequenceNumber = 1;
 let currentSearchQuery = '';
+// Live, APPLIED ledger filter state -- only ever changed by applyLedgerFilters()
+// (or jumpToCustomerLedger()'s direct customer-drilldown), never by the
+// Filters modal's controls directly. This is what reloadVouchers()/
+// matchesCurrentFilters() actually read.
 let currentStatusFilter = 'all'; // all | active | paid | unpaid | void
+let currentDatePreset = 'all'; // all | today | yesterday | week | month | custom -- tracked separately from currentDateRange purely so active-filter chips can show "Today" instead of a raw date range
 let currentDateRange = null; // null = All Dates, else {from, to} yyyy-mm-dd -- Ledger History's own date filter, independent of the Dashboard's
 let currentSettlementFilter = ''; // '' = All, else 'Not Received' | 'Received'
 let currentOwnerFilter = ''; // '' = All Owners, else an owners.id
 let currentStaffFilter = ''; // '' = All Staff, else a staff_members.id (the actual person, not the login -- see made_by_staff_id)
+
+// DRAFT ledger filter state -- what the Filters modal's controls actually
+// read/write while it's open. Seeded from the live state above when the
+// modal opens, and only copied back into the live state by Apply -- so
+// adjusting several filters doesn't reload the ledger after every click,
+// only once. Clear All resets this (and the modal's controls) without
+// closing the modal or touching the live state until Apply is pressed.
+let filtersDraft = {
+  status: 'all',
+  datePreset: 'all',
+  dateRange: null,
+  staffId: '',
+  settlementStatus: '',
+  ownerId: '',
+};
+
 let isSaving = false;
 let companySettings = null;
 
@@ -78,6 +99,8 @@ const clearDrawingsBtn = document.getElementById('clear-drawings-btn');
 const clearAllBtn = document.getElementById('clear-all-btn');
 const brushSizeSlider = document.getElementById('brush-size');
 const brushSizeVal = document.getElementById('brush-size-val');
+const setAllHandwritingBtn = document.getElementById('set-all-handwriting-btn');
+const setAllTypingBtn = document.getElementById('set-all-typing-btn');
 const colorButtons = document.querySelectorAll('.color-btn');
 const toolRadios = document.querySelectorAll('input[name="active-tool"]');
 const colorPickerGroup = document.getElementById('color-picker-group');
@@ -87,17 +110,28 @@ const voucherList = document.getElementById('voucher-list');
 const emptyHistory = document.getElementById('empty-history');
 const searchInput = document.getElementById('search-input');
 const searchClearBtn = document.getElementById('search-clear-btn');
-const filterChipRow = document.getElementById('filter-chip-row');
 const resultCountEl = document.getElementById('result-count');
-const ledgerDateFilter = document.getElementById('ledger-date-filter');
-const ledgerDateClearBtn = document.getElementById('ledger-date-clear-btn');
-const ledgerDateCustomRow = document.getElementById('ledger-date-custom-row');
-const ledgerDateFrom = document.getElementById('ledger-date-from');
-const ledgerDateTo = document.getElementById('ledger-date-to');
-const ledgerDateApplyBtn = document.getElementById('ledger-date-apply-btn');
-const ledgerSettlementFilter = document.getElementById('ledger-settlement-filter');
-const ledgerOwnerFilter = document.getElementById('ledger-owner-filter');
-const ledgerStaffFilter = document.getElementById('ledger-staff-filter');
+
+// Ledger Filters -- sidebar entry point (always visible)
+const openLedgerFiltersBtn = document.getElementById('open-ledger-filters-btn');
+const filtersBadge = document.getElementById('filters-badge');
+const activeFilterChipsEl = document.getElementById('active-filter-chips');
+
+// Ledger Filters modal -- all controls operate on a draft copy of the live
+// filter state (see filtersDraft below) and only take effect on Apply.
+const ledgerFiltersModal = document.getElementById('ledger-filters-modal');
+const closeLedgerFiltersBtn = document.getElementById('close-ledger-filters-btn');
+const filtersStatusChipRow = document.getElementById('filters-status-chip-row');
+const filtersDateSegmented = document.getElementById('filters-date-segmented');
+const filtersDateCustomRow = document.getElementById('filters-date-custom-row');
+const filtersDateFrom = document.getElementById('filters-date-from');
+const filtersDateTo = document.getElementById('filters-date-to');
+const filtersStaffSelect = document.getElementById('filters-staff-select');
+const filtersSettlementSelect = document.getElementById('filters-settlement-select');
+const filtersOwnerSelect = document.getElementById('filters-owner-select');
+const filtersClearAllBtn = document.getElementById('filters-clear-all-btn');
+const filtersApplyBtn = document.getElementById('filters-apply-btn');
+
 const customerNameInput = document.getElementById('customer-name-input');
 const customerPhoneInput = document.getElementById('customer-phone-input');
 const madeByStaffSelect = document.getElementById('made-by-staff-select');
@@ -280,16 +314,17 @@ function getActiveStaffMembers() {
   return allStaffMembers.filter((s) => s.active);
 }
 
+// Builds the <option> lists for the Filters modal's selects. Values are set
+// separately each time the modal opens (see renderFiltersModalFromDraft()),
+// not here -- this only needs to re-run when the owners/staff cache changes.
 function populateOwnerFilterSelect() {
-  ledgerOwnerFilter.innerHTML = '<option value="">All Owners</option>' +
+  filtersOwnerSelect.innerHTML = '<option value="">All Owners</option>' +
     allOwners.map((o) => `<option value="${o.id}">${escapeHtml(o.name)}${o.active ? '' : ' (disabled)'}</option>`).join('');
-  ledgerOwnerFilter.value = currentOwnerFilter;
 }
 
 function populateStaffFilterSelect() {
-  ledgerStaffFilter.innerHTML = '<option value="">All Staff</option>' +
+  filtersStaffSelect.innerHTML = '<option value="">All Staff</option>' +
     allStaffMembers.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}${s.active ? '' : ' (disabled)'}</option>`).join('');
-  ledgerStaffFilter.value = currentStaffFilter;
 }
 
 function populateSettlementOwnerSelect() {
@@ -394,7 +429,17 @@ function getDateRangeForPreset(preset) {
 dashboardDateFrom.value = toLocalISODate(new Date());
 dashboardDateTo.value = toLocalISODate(new Date());
 
+// Owner/Admin only -- get_dashboard_summary enforces this independently on
+// the backend (see supabase/schema.sql), so this is UX, not the actual
+// security boundary. Still worth checking before opening the modal at all
+// -- e.g. if something calls this directly (console, a stale button state)
+// -- it fails with a clear message instead of a confusing RPC error after
+// the modal is already open.
 function openDashboard() {
+  if (!isOwnerAdmin()) {
+    showToast('Access denied -- the Dashboard is for Owner/Admin only.', 'error');
+    return;
+  }
   dashboardModal.classList.add('active');
   loadDashboard();
 }
@@ -482,15 +527,16 @@ function renderDashboardData(data) {
 
 // Closes the dashboard and re-runs the existing server-side ledger search
 // filtered to this one customer, reusing the same currentSearchQuery/
-// currentStatusFilter mechanism the search box and filter chips already
-// drive -- no separate filtering path needed.
+// currentStatusFilter mechanism the search box and Filters modal already
+// drive -- no separate filtering path needed. renderActiveFilterChips()
+// (not direct DOM manipulation of the modal's chips) keeps the sidebar's
+// badge/chips in sync; the modal itself re-derives its own state from
+// currentStatusFilter the next time it's opened (see openLedgerFilters()).
 function jumpToCustomerLedger(customerName, customerPhone) {
   closeDashboard();
 
   currentStatusFilter = 'unpaid';
-  filterChipRow.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
-  const unpaidChip = filterChipRow.querySelector('.filter-chip[data-filter="unpaid"]');
-  if (unpaidChip) unpaidChip.classList.add('active');
+  renderActiveFilterChips();
 
   currentSearchQuery = (customerPhone || customerName || '').toLowerCase().trim();
   searchInput.value = customerPhone || customerName || '';
@@ -1151,10 +1197,22 @@ function setupCanvasListeners() {
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('gesturechange', (e) => e.preventDefault());
 
-  // Row clear buttons
+  // Row clear buttons -- mode-aware: clears whichever input the row is
+  // currently in (canvas+strokes for handwriting, the text field for
+  // typing), not both. The other mode's data is untouched, consistent with
+  // switching modes itself never discarding data (see setRowMode()).
   document.querySelectorAll('.clear-row-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       const rowIdx = parseInt(e.target.dataset.row);
+      const toggleBtn = document.querySelector(`.row-mode-toggle-btn[data-row="${rowIdx}"]`);
+      const mode = toggleBtn ? toggleBtn.dataset.mode : 'handwriting';
+
+      if (mode === 'typing') {
+        const typedInput = document.querySelector(`.row-typed-input[data-row="${rowIdx}"]`);
+        if (typedInput) typedInput.value = '';
+        return;
+      }
+
       const targetCanvas = document.querySelector(`.row-canvas[data-row="${rowIdx}"]`);
       if (targetCanvas) {
         const context = canvasCtxs.get(targetCanvas);
@@ -1174,6 +1232,52 @@ function setupCanvasListeners() {
     }
     canvasStrokes.set(sigCanvas, []);
   });
+}
+
+// Item Name mode (Handwriting/Typing) -- per-row, never deletes the other
+// mode's data on switch (see handleSaveVoucher()/clearAllCanvases() for the
+// only places that actually discard it: a real save, or a full reset).
+function setRowMode(rowIdx, mode) {
+  const toggleBtn = document.querySelector(`.row-mode-toggle-btn[data-row="${rowIdx}"]`);
+  const canvas = document.querySelector(`.row-canvas[data-row="${rowIdx}"]`);
+  const typedInput = document.querySelector(`.row-typed-input[data-row="${rowIdx}"]`);
+  if (!toggleBtn || !canvas || !typedInput) return;
+
+  toggleBtn.dataset.mode = mode;
+  toggleBtn.title = mode === 'handwriting' ? 'Switch to typing mode' : 'Switch to handwriting mode';
+  // toggleAttribute, not .hidden -- SVGElement (unlike HTMLElement) doesn't
+  // reflect the .hidden JS property to the actual hidden="" attribute in
+  // this engine, so [hidden]'s CSS rule would never match and both icons
+  // would stay visibly stacked. toggleAttribute works on any element.
+  toggleBtn.querySelector('.mode-icon-handwriting').toggleAttribute('hidden', mode !== 'handwriting');
+  toggleBtn.querySelector('.mode-icon-typing').toggleAttribute('hidden', mode !== 'typing');
+
+  canvas.hidden = mode !== 'handwriting';
+  typedInput.hidden = mode !== 'typing';
+}
+
+function setupRowModeToggles() {
+  document.querySelectorAll('.row-mode-toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const rowIdx = btn.dataset.row;
+      const nextMode = btn.dataset.mode === 'typing' ? 'handwriting' : 'typing';
+      setRowMode(rowIdx, nextMode);
+    });
+  });
+}
+
+function getRowNameMode(rowIdx) {
+  const toggleBtn = document.querySelector(`.row-mode-toggle-btn[data-row="${rowIdx}"]`);
+  return toggleBtn && toggleBtn.dataset.mode === 'typing' ? 'typing' : 'handwriting';
+}
+
+// Bulk shortcut for the common case of wanting every row the same mode --
+// the per-row toggle above still lets staff mix both on one voucher.
+// Non-destructive (same as a single-row toggle), so no confirmation.
+function setAllRowsMode(mode) {
+  for (let i = 0; i < 8; i++) {
+    setRowMode(i, mode);
+  }
 }
 
 // --- Calculation Engine ---
@@ -1269,39 +1373,39 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
 
     // Company letterhead (shop identity comes first, like a real business
     // document -- "PAYMENT VOUCHER" is the document type, not the headline)
-    eCtx.font = 'bold 22px "Courier Prime", Courier, monospace';
+    eCtx.font = 'bold 22px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillText(companyInfo.name, 48, 40);
 
     if (companyInfo.addressLine) {
-      eCtx.font = '12px "Courier Prime", Courier, monospace';
+      eCtx.font = '12px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
       eCtx.fillStyle = 'rgba(15, 23, 42, 0.6)';
       eCtx.fillText(companyInfo.addressLine, 48, 60);
       eCtx.fillStyle = 'rgba(15, 23, 42, 0.85)';
     }
 
-    eCtx.font = 'bold 28px "Courier Prime", Courier, monospace';
+    eCtx.font = 'bold 28px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillText('PAYMENT VOUCHER', 48, 96);
 
     // Customer (Bill To)
-    eCtx.font = '11px "Courier Prime", Courier, monospace';
+    eCtx.font = '11px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillStyle = 'rgba(15, 23, 42, 0.55)';
     eCtx.fillText('BILL TO', 48, 116);
 
-    eCtx.font = 'bold 17px "Courier Prime", Courier, monospace';
+    eCtx.font = 'bold 17px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
     const customerLine = customerPhone ? `${customerName}  ·  ${customerPhone}` : customerName;
     eCtx.fillText(customerLine, 48, 138);
 
     // Metadata (Voucher ID & Selected Date)
     eCtx.textAlign = 'right';
-    eCtx.font = '16px "Courier Prime", Courier, monospace';
+    eCtx.font = '16px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillText('VOUCHER NO.', 1112, 55);
-    eCtx.font = 'bold 22px "Courier Prime", Courier, monospace';
+    eCtx.font = 'bold 22px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillText(formatVoucherID(sequenceNum), 1112, 80);
 
-    eCtx.font = '16px "Courier Prime", Courier, monospace';
+    eCtx.font = '16px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillText('DATE', 1112, 108);
-    eCtx.font = 'bold 18px "Courier Prime", Courier, monospace';
+    eCtx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillText(dateString, 1112, 130);
 
     eCtx.textAlign = 'left';
@@ -1354,7 +1458,7 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
     eCtx.stroke();
     
     // Column header labels text
-    eCtx.font = 'bold 14px "Courier Prime", Courier, monospace';
+    eCtx.font = 'bold 14px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.textAlign = 'center';
     eCtx.fillText('PARTICULARS / DESCRIPTION', xDesc + colDescWidth / 2, tableTop + 30);
     eCtx.fillText('QTY', xQty + colQtyWidth / 2, tableTop + 30);
@@ -1402,7 +1506,7 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
       // Draw Quantity
       const qty = qtyInput ? qtyInput.value : '';
       if (qty && qty !== '0') {
-        eCtx.font = 'bold 18px "Courier Prime", Courier, monospace';
+        eCtx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
         eCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
         eCtx.fillText(qty, xQty + colQtyWidth / 2, yCenter);
       }
@@ -1410,7 +1514,7 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
       // Draw Price
       const price = priceInput ? priceInput.value : '';
       if (price && parseFloat(price) > 0) {
-        eCtx.font = 'bold 18px "Courier Prime", Courier, monospace';
+        eCtx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
         eCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
         eCtx.fillText(parseFloat(price).toFixed(2), xPrice + colPriceWidth / 2, yCenter);
       }
@@ -1418,17 +1522,32 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
       // Draw Calculated Amount (with blue stamped ink style)
       const amount = amountVal ? amountVal.textContent : '0.00';
       if (amount && parseFloat(amount) > 0) {
-        eCtx.font = 'bold 18px "Courier Prime", Courier, monospace';
+        eCtx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
         eCtx.fillStyle = '#1d4ed8'; // Stamped Blue Ink
         eCtx.textAlign = 'right';
         eCtx.fillText(parseFloat(amount).toFixed(2), xAmount + colAmountWidth - 24, yCenter);
         eCtx.textAlign = 'center'; // reset
       }
       
-      // Draw Row Handwriting Canvas
-      const rowCanvasEl = rowCanvases[i];
-      if (rowCanvasEl) {
-        eCtx.drawImage(rowCanvasEl, xDesc, tableTop + headerHeight + i * rowHeight, colDescWidth, rowHeight);
+      // Draw item name -- typed text (left-aligned, like reading direction)
+      // for a Typing-mode row, otherwise the handwriting canvas image as
+      // before. textAlign is reset back to 'center' right after, same as
+      // the Amount column above, since the rest of this loop assumes it.
+      if (getRowNameMode(i) === 'typing') {
+        const typedInput = document.querySelector(`.row-typed-input[data-row="${i}"]`);
+        const typedName = typedInput ? typedInput.value.trim() : '';
+        if (typedName) {
+          eCtx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
+          eCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+          eCtx.textAlign = 'left';
+          eCtx.fillText(typedName, xDesc + 12, yCenter, colDescWidth - 24);
+          eCtx.textAlign = 'center'; // reset
+        }
+      } else {
+        const rowCanvasEl = rowCanvases[i];
+        if (rowCanvasEl) {
+          eCtx.drawImage(rowCanvasEl, xDesc, tableTop + headerHeight + i * rowHeight, colDescWidth, rowHeight);
+        }
       }
     }
     
@@ -1443,7 +1562,7 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
     eCtx.lineTo(528, footerTop + 75);
     eCtx.stroke();
     
-    eCtx.font = '14px "Courier Prime", Courier, monospace';
+    eCtx.font = '14px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillStyle = 'rgba(15, 23, 42, 0.7)';
     eCtx.textAlign = 'center';
     eCtx.textBaseline = 'alphabetic';
@@ -1454,7 +1573,7 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
     
     // Grand Total box
     eCtx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    eCtx.font = 'bold 15px "Courier Prime", Courier, monospace';
+    eCtx.font = 'bold 15px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.textAlign = 'right';
     eCtx.fillText('TOTAL AMOUNT ($)', 832, footerTop + 45);
     
@@ -1462,7 +1581,7 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
     
     // Print grand total value
     const grandTotal = document.getElementById('grand-total-val').textContent;
-    eCtx.font = 'bold 24px "Courier Prime", Courier, monospace';
+    eCtx.font = 'bold 24px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
     eCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
     eCtx.textAlign = 'right';
     eCtx.fillText(grandTotal, 1112 - 24, footerTop + 55);
@@ -1480,7 +1599,7 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
       eCtx.lineWidth = 2;
       eCtx.strokeRect(-172, -42, 344, 84);
       
-      eCtx.font = 'bold 64px "Courier Prime", Courier, monospace';
+      eCtx.font = 'bold 64px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
       eCtx.fillStyle = '#dc2626';
       eCtx.textAlign = 'center';
       eCtx.textBaseline = 'middle';
@@ -1678,6 +1797,13 @@ function clearAllCanvases() {
     }
     canvasStrokes.set(canvasElement, []);
   });
+
+  // Full reset (called after a successful save, and by "Clear Entire
+  // Voucher") -- unlike a mode switch or the per-row clear button, this is
+  // the one place that's supposed to wipe everything, so typed text and
+  // mode both go back to defaults too.
+  document.querySelectorAll('.row-typed-input').forEach((input) => { input.value = ''; });
+  rowCanvases.forEach((canvas) => setRowMode(canvas.dataset.row, 'handwriting'));
 }
 
 // Save Slip Handler
@@ -1722,12 +1848,18 @@ async function handleSaveVoucher({ print = false } = {}) {
   }
 
   // Items are recomputed and sanitized server-side in create_voucher; this
-  // copy is only used to render the composite PNG.
+  // copy is only used to render the composite PNG. nameMode/typedName are
+  // read straight from the DOM, same as qty/price -- no separate JS state
+  // tracks them, the mode toggle button's own data-mode attribute IS the
+  // state (see setRowMode()).
   const items = [];
   for (let i = 0; i < 8; i++) {
     const qtyVal = parseFloat(document.querySelector(`.qty-input[data-row="${i}"]`).value) || 0;
     const priceVal = parseFloat(document.querySelector(`.price-input[data-row="${i}"]`).value) || 0;
-    items.push({ rowIndex: i, qty: qtyVal, price: priceVal });
+    const nameMode = getRowNameMode(i);
+    const typedInput = document.querySelector(`.row-typed-input[data-row="${i}"]`);
+    const typedName = nameMode === 'typing' ? (typedInput ? typedInput.value.trim() : '') : '';
+    items.push({ rowIndex: i, qty: qtyVal, price: priceVal, nameMode, typedName });
   }
 
   isSaving = true;
@@ -2267,70 +2399,182 @@ function handleClearSearch() {
   reloadVouchers();
 }
 
-function handleFilterChipClick(e) {
+// --- Ledger Filters modal -- draft/apply pattern (see filtersDraft above) ---
+
+// Declarative list of what's currently active, driving the sidebar's
+// badge count and removable chips AND (deliberately) the only place that
+// knows how to label/clear each filter -- adding a future filter means
+// adding one entry here plus its modal control, not restructuring this
+// rendering/badge system again.
+function getActiveFilterDescriptors() {
+  const list = [];
+  const statusLabels = { active: 'Active', paid: 'Paid', unpaid: 'Unpaid', void: 'Void' };
+  const dateLabels = { today: 'Today', yesterday: 'Yesterday', week: 'This Week', month: 'This Month' };
+
+  if (currentStatusFilter !== 'all') {
+    list.push({
+      key: 'status',
+      label: statusLabels[currentStatusFilter] || currentStatusFilter,
+      onRemove: () => { currentStatusFilter = 'all'; },
+    });
+  }
+  if (currentDateRange) {
+    const label = dateLabels[currentDatePreset] || `${currentDateRange.from} – ${currentDateRange.to}`;
+    list.push({
+      key: 'date',
+      label,
+      onRemove: () => { currentDateRange = null; currentDatePreset = 'all'; },
+    });
+  }
+  if (currentStaffFilter) {
+    const staff = staffMembersById.get(currentStaffFilter);
+    list.push({
+      key: 'staff',
+      label: `Staff: ${staff ? staff.name : 'Unknown'}`,
+      onRemove: () => { currentStaffFilter = ''; },
+    });
+  }
+  if (currentSettlementFilter) {
+    list.push({
+      key: 'settlement',
+      label: currentSettlementFilter,
+      onRemove: () => { currentSettlementFilter = ''; },
+    });
+  }
+  if (currentOwnerFilter) {
+    const owner = ownersById.get(currentOwnerFilter);
+    list.push({
+      key: 'owner',
+      label: `Received By: ${owner ? owner.name : 'Unknown'}`,
+      onRemove: () => { currentOwnerFilter = ''; },
+    });
+  }
+  return list;
+}
+
+function renderActiveFilterChips() {
+  const chips = getActiveFilterDescriptors();
+
+  activeFilterChipsEl.innerHTML = chips.map((c) => `
+    <span class="active-chip" data-key="${c.key}">
+      ${escapeHtml(c.label)}
+      <button class="active-chip-remove" data-key="${c.key}" aria-label="Remove ${escapeHtml(c.label)} filter">×</button>
+    </span>
+  `).join('');
+  activeFilterChipsEl.hidden = chips.length === 0;
+
+  filtersBadge.textContent = String(chips.length);
+  filtersBadge.hidden = chips.length === 0;
+}
+
+activeFilterChipsEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('.active-chip-remove');
+  if (!btn) return;
+  const descriptor = getActiveFilterDescriptors().find((c) => c.key === btn.dataset.key);
+  if (descriptor) descriptor.onRemove();
+  renderActiveFilterChips();
+  reloadVouchers();
+});
+
+// Reflects the modal's controls to match filtersDraft -- called whenever
+// the modal opens (seeded from live state) and after Clear All (reset to
+// defaults), so the controls and filtersDraft can never drift apart.
+function renderFiltersModalFromDraft() {
+  filtersStatusChipRow.querySelectorAll('.filter-chip').forEach((chip) => {
+    chip.classList.toggle('active', chip.dataset.filter === filtersDraft.status);
+  });
+
+  filtersDateSegmented.querySelectorAll('input[name="filters-date-preset"]').forEach((radio) => {
+    radio.checked = radio.value === filtersDraft.datePreset;
+  });
+  filtersDateCustomRow.hidden = filtersDraft.datePreset !== 'custom';
+  filtersDateFrom.value = filtersDraft.dateRange ? filtersDraft.dateRange.from : '';
+  filtersDateTo.value = filtersDraft.dateRange ? filtersDraft.dateRange.to : '';
+
+  filtersStaffSelect.value = filtersDraft.staffId;
+  filtersSettlementSelect.value = filtersDraft.settlementStatus;
+  filtersOwnerSelect.value = filtersDraft.ownerId;
+}
+
+function openLedgerFilters() {
+  filtersDraft = {
+    status: currentStatusFilter,
+    datePreset: currentDatePreset,
+    dateRange: currentDateRange,
+    staffId: currentStaffFilter,
+    settlementStatus: currentSettlementFilter,
+    ownerId: currentOwnerFilter,
+  };
+  renderFiltersModalFromDraft();
+  ledgerFiltersModal.classList.add('active');
+}
+
+function closeLedgerFilters() {
+  ledgerFiltersModal.classList.remove('active');
+}
+
+function applyLedgerFilters() {
+  currentStatusFilter = filtersDraft.status;
+  currentDatePreset = filtersDraft.datePreset;
+  currentDateRange = filtersDraft.dateRange;
+  currentStaffFilter = filtersDraft.staffId;
+  currentSettlementFilter = filtersDraft.settlementStatus;
+  currentOwnerFilter = filtersDraft.ownerId;
+
+  closeLedgerFilters();
+  renderActiveFilterChips();
+  reloadVouchers();
+}
+
+// Resets the draft and the modal's own controls -- does NOT touch the live
+// filter state or reload the ledger. Stays open so Apply remains the only
+// path that commits a change, rather than having two different "this took
+// effect" behaviors to keep track of.
+function clearAllFiltersDraft() {
+  filtersDraft = {
+    status: 'all',
+    datePreset: 'all',
+    dateRange: null,
+    staffId: '',
+    settlementStatus: '',
+    ownerId: '',
+  };
+  renderFiltersModalFromDraft();
+}
+
+filtersStatusChipRow.addEventListener('click', (e) => {
   const chip = e.target.closest('.filter-chip');
   if (!chip) return;
-  filterChipRow.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-  chip.classList.add('active');
-  currentStatusFilter = chip.dataset.filter;
-  reloadVouchers();
-}
+  filtersDraft.status = chip.dataset.filter;
+  renderFiltersModalFromDraft();
+});
 
-// Ledger History's own date filter -- independent of the Dashboard's, but
-// shares getDateRangeForPreset() for identical Today/Yesterday/Week/Month
-// math. The select's own displayed value is the "currently active filter"
-// indicator; the clear button is only shown once a filter is applied.
-function handleLedgerDateFilterChange() {
-  const preset = ledgerDateFilter.value;
+// Shares getDateRangeForPreset() with the Dashboard's own date range
+// picker for identical Today/Yesterday/This Week/This Month math.
+filtersDateSegmented.addEventListener('change', (e) => {
+  if (e.target.name !== 'filters-date-preset') return;
+  const preset = e.target.value;
+  filtersDraft.datePreset = preset;
+  filtersDraft.dateRange = preset === 'all' || preset === 'custom' ? (preset === 'custom' ? filtersDraft.dateRange : null) : getDateRangeForPreset(preset);
+  renderFiltersModalFromDraft();
+});
 
-  if (preset === 'all') {
-    ledgerDateCustomRow.hidden = true;
-    ledgerDateClearBtn.hidden = true;
-    currentDateRange = null;
-    reloadVouchers();
-    return;
+function handleFiltersDateCustomChange() {
+  if (filtersDateFrom.value && filtersDateTo.value) {
+    filtersDraft.dateRange = { from: filtersDateFrom.value, to: filtersDateTo.value };
   }
-
-  ledgerDateClearBtn.hidden = false;
-
-  if (preset === 'custom') {
-    ledgerDateCustomRow.hidden = false;
-    return; // wait for the Apply button rather than reloading on every keystroke
-  }
-
-  ledgerDateCustomRow.hidden = true;
-  currentDateRange = getDateRangeForPreset(preset);
-  reloadVouchers();
 }
+filtersDateFrom.addEventListener('change', handleFiltersDateCustomChange);
+filtersDateTo.addEventListener('change', handleFiltersDateCustomChange);
 
-function handleLedgerDateClear() {
-  ledgerDateFilter.value = 'all';
-  ledgerDateCustomRow.hidden = true;
-  ledgerDateClearBtn.hidden = true;
-  currentDateRange = null;
-  reloadVouchers();
-}
+filtersStaffSelect.addEventListener('change', () => { filtersDraft.staffId = filtersStaffSelect.value; });
+filtersSettlementSelect.addEventListener('change', () => { filtersDraft.settlementStatus = filtersSettlementSelect.value; });
+filtersOwnerSelect.addEventListener('change', () => { filtersDraft.ownerId = filtersOwnerSelect.value; });
 
-function handleLedgerDateApply() {
-  if (!ledgerDateFrom.value || !ledgerDateTo.value) return;
-  currentDateRange = { from: ledgerDateFrom.value, to: ledgerDateTo.value };
-  reloadVouchers();
-}
-
-function handleLedgerSettlementFilterChange() {
-  currentSettlementFilter = ledgerSettlementFilter.value;
-  reloadVouchers();
-}
-
-function handleLedgerOwnerFilterChange() {
-  currentOwnerFilter = ledgerOwnerFilter.value;
-  reloadVouchers();
-}
-
-function handleLedgerStaffFilterChange() {
-  currentStaffFilter = ledgerStaffFilter.value;
-  reloadVouchers();
-}
+openLedgerFiltersBtn.addEventListener('click', openLedgerFilters);
+closeLedgerFiltersBtn.addEventListener('click', closeLedgerFilters);
+filtersApplyBtn.addEventListener('click', applyLedgerFilters);
+filtersClearAllBtn.addEventListener('click', clearAllFiltersDraft);
 
 // --- Listeners & Tool configuration ---
 
@@ -2377,6 +2621,9 @@ brushSizeSlider.addEventListener('input', (e) => {
   brushSizeVal.textContent = `${penWidth.toFixed(1)}px`;
   updateAllCanvasSettings();
 });
+
+setAllHandwritingBtn.addEventListener('click', () => setAllRowsMode('handwriting'));
+setAllTypingBtn.addEventListener('click', () => setAllRowsMode('typing'));
 
 // Scale voucher element to fit inside the paper viewport dynamically
 function scaleVoucherToFit() {
@@ -2497,17 +2744,8 @@ saveOnlyBtn.addEventListener('click', () => handleSaveVoucher({ print: false }))
 savePrintBtn.addEventListener('click', () => handleSaveVoucher({ print: true }));
 searchInput.addEventListener('input', handleSearch);
 searchClearBtn.addEventListener('click', handleClearSearch);
-filterChipRow.addEventListener('click', handleFilterChipClick);
-ledgerDateFilter.addEventListener('change', handleLedgerDateFilterChange);
-ledgerDateClearBtn.addEventListener('click', handleLedgerDateClear);
-ledgerDateApplyBtn.addEventListener('click', handleLedgerDateApply);
-ledgerSettlementFilter.addEventListener('change', handleLedgerSettlementFilterChange);
-ledgerOwnerFilter.addEventListener('change', handleLedgerOwnerFilterChange);
-ledgerStaffFilter.addEventListener('change', handleLedgerStaffFilterChange);
-// Sane starting point for the custom-range inputs, same reasoning as the
-// Dashboard's equivalent fields.
-ledgerDateFrom.value = toLocalISODate(new Date());
-ledgerDateTo.value = toLocalISODate(new Date());
+// Ledger Filters modal's own listeners are wired inline, right next to
+// their handlers, above (openLedgerFilters/applyLedgerFilters/etc.).
 
 // Modal details actions
 closeModalBtn.addEventListener('click', closeVoucherDetail);
@@ -2573,6 +2811,7 @@ async function startApp() {
 
     openOwnerMgmtBtn.hidden = !isOwnerAdmin();
     openStaffMgmtBtn.hidden = !isOwnerAdmin();
+    openDashboardBtn.hidden = !isOwnerAdmin();
     populateOwnerFilterSelect();
     populateStaffFilterSelect();
     populateMadeByStaffSelect();
@@ -2585,6 +2824,7 @@ async function startApp() {
     updateNextVoucherID();
     loadCurrentDate();
     setupCanvasListeners();
+    setupRowModeToggles();
     syncSidebarForViewport();
 
     // Safety delay to ensure browser layout is resolved

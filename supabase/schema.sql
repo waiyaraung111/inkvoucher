@@ -253,6 +253,8 @@ declare
   v_qty numeric;
   v_price numeric;
   v_amount numeric;
+  v_name_mode text;
+  v_typed_name text;
   v_voucher public.vouchers;
   v_initial_payment_status text;
   v_initial_paid_at timestamptz;
@@ -282,16 +284,27 @@ begin
     raise exception 'Staff member is disabled';
   end if;
 
-  -- Recompute every row's amount server-side -- never trust a client-sent total.
+  -- Recompute every row's amount server-side -- never trust a client-sent
+  -- total. nameMode/typedName are sanitized the same defensive way: an
+  -- unrecognized or missing mode always falls back to 'handwriting', and a
+  -- handwriting row's typedName is forced to null regardless of what the
+  -- client sent, so a row's stored shape always matches its actual mode.
+  -- drawing_data (the handwriting stroke structure) is untouched here --
+  -- a row keeps whatever strokes it has regardless of mode.
   for v_item in select * from jsonb_array_elements(p_items)
   loop
     v_qty := coalesce((v_item->>'qty')::numeric, 0);
     v_price := coalesce((v_item->>'price')::numeric, 0);
     v_amount := round(v_qty * v_price, 2);
     v_total := v_total + v_amount;
+
+    v_name_mode := case when v_item->>'nameMode' = 'typing' then 'typing' else 'handwriting' end;
+    v_typed_name := case when v_name_mode = 'typing' then trim(coalesce(v_item->>'typedName', '')) else null end;
+
     v_sanitized_items := v_sanitized_items || jsonb_build_object(
       'rowIndex', (v_item->>'rowIndex')::int,
-      'qty', v_qty, 'price', v_price, 'amount', v_amount
+      'qty', v_qty, 'price', v_price, 'amount', v_amount,
+      'nameMode', v_name_mode, 'typedName', v_typed_name
     );
   end loop;
 
@@ -787,14 +800,31 @@ grant execute on function public.search_vouchers to authenticated;
 -- [p_date_from, p_date_to]. outstanding_customers is deliberately NOT
 -- date-scoped -- a customer who still owes money from last month is still
 -- outstanding today, regardless of which range the staff has selected.
+--
+-- Owner/Admin only -- the Dashboard surfaces shop-wide totals/reports, not
+-- per-voucher operational data, so it's gated the same way as Owner
+-- Settlement/Owner Management/Staff Management (is_owner_admin() below).
+-- plpgsql (not plain sql) specifically so this check can raise instead of
+-- silently aggregating empty/zero data for a denied caller.
 create or replace function public.get_dashboard_summary(
   p_date_from date,
   p_date_to date
 )
 returns jsonb
-language sql stable
+language plpgsql
+stable
 set search_path = public
 as $$
+declare
+  v_result jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.is_owner_admin() then
+    raise exception 'Only Owner/Admin can view the Dashboard' using errcode = '42501';
+  end if;
+
   with in_range as (
     select *
     from public.vouchers
@@ -870,6 +900,10 @@ as $$
       ) order by outstanding_amount desc), '[]'::jsonb)
       from outstanding
     )
-  );
+  )
+  into v_result;
+
+  return v_result;
+end;
 $$;
 grant execute on function public.get_dashboard_summary to authenticated;

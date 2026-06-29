@@ -7,7 +7,11 @@
   <link rel="stylesheet" href="index.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Noto Sans Myanmar covers Myanmar-script glyphs Courier Prime/Outfit
+       don't have -- needed wherever typed text (item names, etc.) gets
+       drawn onto the export canvas in app.js; confirmed working via
+       tests/burmese-font-rendering-spike.html before this was wired in. -->
+  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+Myanmar:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -46,59 +50,14 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
-      <div class="date-filter-row">
-        <select class="date-filter-select" id="ledger-date-filter" title="Filter ledger by date">
-          <option value="all">All Dates</option>
-          <option value="today">Today</option>
-          <option value="yesterday">Yesterday</option>
-          <option value="week">This Week</option>
-          <option value="month">This Month</option>
-          <option value="custom">Custom Range</option>
-        </select>
-        <button class="date-filter-clear-btn" id="ledger-date-clear-btn" title="Clear date filter" hidden>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      <div class="filters-trigger-row">
+        <button class="btn btn-secondary filters-trigger-btn" id="open-ledger-filters-btn" title="Status, date, staff, and owner settlement filters">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          <span class="btn-label">Filters</span>
+          <span class="filters-badge" id="filters-badge" hidden>0</span>
         </button>
       </div>
-      <div class="date-filter-custom-row" id="ledger-date-custom-row" hidden>
-        <div class="date-filter-custom-field">
-          <label for="ledger-date-from">From</label>
-          <input type="date" id="ledger-date-from">
-        </div>
-        <div class="date-filter-custom-field">
-          <label for="ledger-date-to">To</label>
-          <input type="date" id="ledger-date-to">
-        </div>
-        <button class="date-filter-apply-btn" id="ledger-date-apply-btn">Apply</button>
-      </div>
-      <div class="filter-chip-row" id="filter-chip-row">
-        <button class="filter-chip active" data-filter="all">All</button>
-        <button class="filter-chip" data-filter="active">Active</button>
-        <button class="filter-chip" data-filter="paid">Paid</button>
-        <button class="filter-chip" data-filter="unpaid">Unpaid</button>
-        <button class="filter-chip" data-filter="void">Void</button>
-      </div>
-      <div class="extra-filter-row" id="extra-filter-row">
-        <div class="extra-filter-field">
-          <label for="ledger-settlement-filter">Owner Settlement</label>
-          <select id="ledger-settlement-filter" title="Filter ledger by Owner Settlement status">
-            <option value="">All</option>
-            <option value="Not Received">Not Received</option>
-            <option value="Received">Received</option>
-          </select>
-        </div>
-        <div class="extra-filter-field">
-          <label for="ledger-owner-filter">Received By</label>
-          <select id="ledger-owner-filter" title="Filter ledger by which owner received settlement">
-            <option value="">All Owners</option>
-          </select>
-        </div>
-        <div class="extra-filter-field">
-          <label for="ledger-staff-filter">Staff Name</label>
-          <select id="ledger-staff-filter" title="Filter ledger by which staff member made the voucher">
-            <option value="">All Staff</option>
-          </select>
-        </div>
-      </div>
+      <div class="active-filter-chips" id="active-filter-chips" hidden></div>
       <div class="result-count" id="result-count"></div>
       <div class="voucher-list" id="voucher-list">
         <div class="empty-history" id="empty-history">
@@ -129,7 +88,7 @@
             <span class="btn-label">Clear Entire Voucher</span>
           </button>
           <div class="divider"></div>
-          <button class="btn btn-secondary" id="open-dashboard-btn" title="View daily summary dashboard">
+          <button class="btn btn-secondary" id="open-dashboard-btn" title="View daily summary dashboard (Owner/Admin only)" hidden>
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
             <span class="btn-label">Dashboard</span>
           </button>
@@ -189,6 +148,25 @@
               <span class="brush-size-val" id="brush-size-val">2.5px</span>
             </div>
           </div>
+
+          <div class="divider"></div>
+
+          <!-- Bulk item-name mode -- sets all 8 rows at once. The per-row
+               toggle in each cell still lets staff mix both modes on one
+               voucher; this is just a shortcut for the common case of
+               wanting them all the same. Non-destructive either way, same
+               as the per-row toggle -- no confirmation needed. -->
+          <div class="tool-group">
+            <label class="tool-label">Set All Rows</label>
+            <div class="set-all-mode-group">
+              <button type="button" class="set-all-mode-btn" id="set-all-handwriting-btn" title="Switch all rows to handwriting mode">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              </button>
+              <button type="button" class="set-all-mode-btn" id="set-all-typing-btn" title="Switch all rows to typing mode">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- The Paper Slip Viewport -->
@@ -228,7 +206,12 @@
                 <!-- Repeat 8 Rows -->
                 <div class="table-row" data-row-idx="0">
                   <div class="col col-desc">
+                    <button class="row-mode-toggle-btn" data-row="0" data-mode="handwriting" title="Switch to typing mode">
+                      <svg class="mode-icon-handwriting" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <svg class="mode-icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+                    </button>
                     <canvas class="row-canvas" data-row="0"></canvas>
+                    <input type="text" class="row-typed-input" data-row="0" placeholder="Type item name…" hidden>
                     <button class="clear-row-btn" data-row="0" title="Clear Row Canvas">×</button>
                   </div>
                   <div class="col col-qty">
@@ -244,7 +227,12 @@
 
                 <div class="table-row" data-row-idx="1">
                   <div class="col col-desc">
+                    <button class="row-mode-toggle-btn" data-row="1" data-mode="handwriting" title="Switch to typing mode">
+                      <svg class="mode-icon-handwriting" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <svg class="mode-icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+                    </button>
                     <canvas class="row-canvas" data-row="1"></canvas>
+                    <input type="text" class="row-typed-input" data-row="1" placeholder="Type item name…" hidden>
                     <button class="clear-row-btn" data-row="1" title="Clear Row Canvas">×</button>
                   </div>
                   <div class="col col-qty">
@@ -260,7 +248,12 @@
 
                 <div class="table-row" data-row-idx="2">
                   <div class="col col-desc">
+                    <button class="row-mode-toggle-btn" data-row="2" data-mode="handwriting" title="Switch to typing mode">
+                      <svg class="mode-icon-handwriting" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <svg class="mode-icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+                    </button>
                     <canvas class="row-canvas" data-row="2"></canvas>
+                    <input type="text" class="row-typed-input" data-row="2" placeholder="Type item name…" hidden>
                     <button class="clear-row-btn" data-row="2" title="Clear Row Canvas">×</button>
                   </div>
                   <div class="col col-qty">
@@ -276,7 +269,12 @@
 
                 <div class="table-row" data-row-idx="3">
                   <div class="col col-desc">
+                    <button class="row-mode-toggle-btn" data-row="3" data-mode="handwriting" title="Switch to typing mode">
+                      <svg class="mode-icon-handwriting" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <svg class="mode-icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+                    </button>
                     <canvas class="row-canvas" data-row="3"></canvas>
+                    <input type="text" class="row-typed-input" data-row="3" placeholder="Type item name…" hidden>
                     <button class="clear-row-btn" data-row="3" title="Clear Row Canvas">×</button>
                   </div>
                   <div class="col col-qty">
@@ -292,7 +290,12 @@
 
                 <div class="table-row" data-row-idx="4">
                   <div class="col col-desc">
+                    <button class="row-mode-toggle-btn" data-row="4" data-mode="handwriting" title="Switch to typing mode">
+                      <svg class="mode-icon-handwriting" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <svg class="mode-icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+                    </button>
                     <canvas class="row-canvas" data-row="4"></canvas>
+                    <input type="text" class="row-typed-input" data-row="4" placeholder="Type item name…" hidden>
                     <button class="clear-row-btn" data-row="4" title="Clear Row Canvas">×</button>
                   </div>
                   <div class="col col-qty">
@@ -308,7 +311,12 @@
 
                 <div class="table-row" data-row-idx="5">
                   <div class="col col-desc">
+                    <button class="row-mode-toggle-btn" data-row="5" data-mode="handwriting" title="Switch to typing mode">
+                      <svg class="mode-icon-handwriting" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <svg class="mode-icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+                    </button>
                     <canvas class="row-canvas" data-row="5"></canvas>
+                    <input type="text" class="row-typed-input" data-row="5" placeholder="Type item name…" hidden>
                     <button class="clear-row-btn" data-row="5" title="Clear Row Canvas">×</button>
                   </div>
                   <div class="col col-qty">
@@ -324,7 +332,12 @@
 
                 <div class="table-row" data-row-idx="6">
                   <div class="col col-desc">
+                    <button class="row-mode-toggle-btn" data-row="6" data-mode="handwriting" title="Switch to typing mode">
+                      <svg class="mode-icon-handwriting" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <svg class="mode-icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+                    </button>
                     <canvas class="row-canvas" data-row="6"></canvas>
+                    <input type="text" class="row-typed-input" data-row="6" placeholder="Type item name…" hidden>
                     <button class="clear-row-btn" data-row="6" title="Clear Row Canvas">×</button>
                   </div>
                   <div class="col col-qty">
@@ -340,7 +353,12 @@
 
                 <div class="table-row" data-row-idx="7">
                   <div class="col col-desc">
+                    <button class="row-mode-toggle-btn" data-row="7" data-mode="handwriting" title="Switch to typing mode">
+                      <svg class="mode-icon-handwriting" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <svg class="mode-icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+                    </button>
                     <canvas class="row-canvas" data-row="7"></canvas>
+                    <input type="text" class="row-typed-input" data-row="7" placeholder="Type item name…" hidden>
                     <button class="clear-row-btn" data-row="7" title="Clear Row Canvas">×</button>
                   </div>
                   <div class="col col-qty">
@@ -656,6 +674,109 @@
           <div class="owner-list" id="staff-list">
             <div class="list-loading" id="staff-list-loading" hidden>Loading staff…</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ledger Filters Modal -->
+    <div class="modal-overlay" id="ledger-filters-modal">
+      <div class="modal-card filters-modal-card">
+        <div class="modal-header">
+          <div class="modal-title-info">
+            <h3>Filters</h3>
+          </div>
+          <button class="close-modal-btn" id="close-ledger-filters-btn" title="Close Filters">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+
+        <div class="modal-body filters-modal-body">
+          <div class="filters-section">
+            <h4 class="filters-section-title">Common</h4>
+
+            <div class="filters-field">
+              <label>Status</label>
+              <div class="filter-chip-row" id="filters-status-chip-row">
+                <button class="filter-chip active" data-filter="all">All</button>
+                <button class="filter-chip" data-filter="active">Active</button>
+                <button class="filter-chip" data-filter="paid">Paid</button>
+                <button class="filter-chip" data-filter="unpaid">Unpaid</button>
+                <button class="filter-chip" data-filter="void">Void</button>
+              </div>
+            </div>
+
+            <div class="filters-field">
+              <label>Date</label>
+              <div class="segmented-control filters-date-segmented" id="filters-date-segmented">
+                <label class="segmented-option">
+                  <input type="radio" name="filters-date-preset" value="all" checked>
+                  <span class="segmented-label mini-label">All</span>
+                </label>
+                <label class="segmented-option">
+                  <input type="radio" name="filters-date-preset" value="today">
+                  <span class="segmented-label mini-label">Today</span>
+                </label>
+                <label class="segmented-option">
+                  <input type="radio" name="filters-date-preset" value="yesterday">
+                  <span class="segmented-label mini-label">Yesterday</span>
+                </label>
+                <label class="segmented-option">
+                  <input type="radio" name="filters-date-preset" value="week">
+                  <span class="segmented-label mini-label">This Week</span>
+                </label>
+                <label class="segmented-option">
+                  <input type="radio" name="filters-date-preset" value="month">
+                  <span class="segmented-label mini-label">This Month</span>
+                </label>
+                <label class="segmented-option">
+                  <input type="radio" name="filters-date-preset" value="custom">
+                  <span class="segmented-label mini-label">Custom</span>
+                </label>
+              </div>
+              <div class="date-filter-custom-row" id="filters-date-custom-row" hidden>
+                <div class="date-filter-custom-field">
+                  <label for="filters-date-from">From</label>
+                  <input type="date" id="filters-date-from">
+                </div>
+                <div class="date-filter-custom-field">
+                  <label for="filters-date-to">To</label>
+                  <input type="date" id="filters-date-to">
+                </div>
+              </div>
+            </div>
+
+            <div class="filters-field">
+              <label for="filters-staff-select">Staff Name</label>
+              <select id="filters-staff-select" title="Filter ledger by which staff member made the voucher">
+                <option value="">All Staff</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="filters-section">
+            <h4 class="filters-section-title">Advanced</h4>
+
+            <div class="filters-field">
+              <label for="filters-settlement-select">Owner Settlement</label>
+              <select id="filters-settlement-select" title="Filter ledger by Owner Settlement status">
+                <option value="">All</option>
+                <option value="Not Received">Not Received</option>
+                <option value="Received">Received</option>
+              </select>
+            </div>
+
+            <div class="filters-field">
+              <label for="filters-owner-select">Received By Owner</label>
+              <select id="filters-owner-select" title="Filter ledger by which owner received settlement">
+                <option value="">All Owners</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary text-danger" id="filters-clear-all-btn">Clear All</button>
+          <button class="btn btn-primary" id="filters-apply-btn">Apply</button>
         </div>
       </div>
     </div>
