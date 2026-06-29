@@ -2,6 +2,30 @@
    InkVoucher - Javascript Engine
    ========================================================================== */
 
+// --- Build/version indicator: Environment field ---
+// data-app-env on .build-env-value is either an explicit label baked in at
+// build time (APP_ENV set when `npm run build`/`npm run deploy` ran -- see
+// build.js) or the literal string "auto" (the committed default, meaning
+// no override was set). "auto" falls back to detecting it from the actual
+// hostname the page loaded from -- this is what makes Development work
+// with zero configuration for local testing, and what lets a future
+// staging/testing deployment be recognized automatically too, as long as
+// its hostname/Worker name contains "staging" or "test" -- no changes to
+// this file or build.js needed for that case. Runs immediately (not
+// gated behind login) since these elements exist in the DOM regardless of
+// auth state.
+function detectEnvironmentFromHostname() {
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) return 'Development';
+  if (/(?:^|[.-])(?:staging|test|testing)(?:[.-]|$)/i.test(host)) return 'Testing';
+  return 'Production';
+}
+
+document.querySelectorAll('.build-env-value').forEach((el) => {
+  const explicit = el.dataset.appEnv;
+  el.textContent = explicit && explicit !== 'auto' ? explicit : detectEnvironmentFromHostname();
+});
+
 // --- Constants & State ---
 let currentVouchers = [];
 let activeVoucher = null;
@@ -138,6 +162,14 @@ const madeByStaffSelect = document.getElementById('made-by-staff-select');
 const saveOnlyBtn = document.getElementById('save-only-btn');
 const savePrintBtn = document.getElementById('save-print-btn');
 
+// Save & Print choice modal
+const savePrintChoiceModal = document.getElementById('save-print-choice-modal');
+const closeSavePrintChoiceBtn = document.getElementById('close-save-print-choice-btn');
+const choicePrintA5Btn = document.getElementById('choice-print-a5-btn');
+const choicePrintReceiptBtn = document.getElementById('choice-print-receipt-btn');
+const choiceSaveOnlyBtn = document.getElementById('choice-save-only-btn');
+const choiceCancelBtn = document.getElementById('choice-cancel-btn');
+
 // Sidebar toggles
 const sidebar = document.getElementById('sidebar');
 const hideSidebarBtn = document.getElementById('hide-sidebar-btn');
@@ -164,12 +196,25 @@ const modalPaymentBadge = document.getElementById('modal-payment-badge');
 const modalStatusBadge = document.getElementById('modal-status-badge');
 const modalVoucherImg = document.getElementById('modal-voucher-img');
 const modalVoidOverlay = document.getElementById('modal-void-overlay');
+const expandPreviewBtn = document.getElementById('expand-preview-btn');
 const voidBtn = document.getElementById('void-btn');
 const downloadBtn = document.getElementById('download-btn');
 const markPaidBtn = document.getElementById('mark-paid-btn');
 const markUnpaidBtn = document.getElementById('mark-unpaid-btn');
 const printBtn = document.getElementById('print-btn');
 const printThermalBtn = document.getElementById('print-thermal-btn');
+
+// Full-Screen Voucher Preview Lightbox -- customer-facing image only, never
+// Owner Settlement/internal controls (those stay in the detail modal above)
+// and never part of print/PDF output.
+const voucherLightbox = document.getElementById('voucher-lightbox');
+const lightboxImg = document.getElementById('lightbox-voucher-img');
+const lightboxTitle = document.getElementById('lightbox-voucher-id');
+const closeLightboxBtn = document.getElementById('close-lightbox-btn');
+const lightboxZoomInBtn = document.getElementById('lightbox-zoom-in-btn');
+const lightboxZoomOutBtn = document.getElementById('lightbox-zoom-out-btn');
+const lightboxZoomFitBtn = document.getElementById('lightbox-zoom-fit-btn');
+const lightboxBody = document.getElementById('lightbox-body');
 
 // Owner Settlement Elements (voucher detail modal)
 const modalSettlementBadge = document.getElementById('modal-settlement-badge');
@@ -380,9 +425,67 @@ function describeRpcError(error) {
   return error.message || 'Something went wrong.';
 }
 
+// --- Number formatting ---
+
+// Whole numbers everywhere -- this business doesn't use decimal places.
+// Comma-grouped; a value that technically carries cents internally still
+// displays clean (1250.5 -> "1,251") since maximumFractionDigits: 0 rounds
+// rather than truncates. This only affects display text -- internal
+// storage/calculation precision (qty * price, sums) is untouched.
+function formatWholeNumber(n) {
+  return Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+// Shrinks the font size (down to a floor) only as much as needed so `text`
+// fits within maxWidth on this canvas context -- a very large number must
+// never bleed into a neighboring column or past the voucher's outer
+// border. Mutates ctx.font as a side effect; the caller's subsequent
+// fillText() uses whatever size this settles on. Used by
+// renderCompositeVoucher() for the Qty/Price/Amount/Total columns.
+function fitCanvasTextToWidth(ctx, text, maxWidth, baseFontSize, fontFamily, minFontSize = 10) {
+  let fontSize = baseFontSize;
+  ctx.font = `bold ${fontSize}px ${fontFamily}`;
+  // Math.max clamps the last step exactly at the floor instead of one past
+  // it -- decrementing unconditionally can overshoot by ~1px on the final
+  // iteration since the loop condition is only checked *before* each step.
+  while (ctx.measureText(text).width > maxWidth && fontSize > minFontSize) {
+    fontSize = Math.max(fontSize - 1, minFontSize);
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+  }
+}
+
+// Hard backstop behind fitCanvasTextToWidth -- clips drawing to a
+// rectangle so even an absurdly long string (past what the shrink floor
+// can still accommodate) is cropped at the column boundary instead of
+// painting over a neighboring column or past the voucher's outer border.
+function drawClippedText(ctx, rectX, rectY, rectW, rectH, drawFn) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(rectX, rectY, rectW, rectH);
+  ctx.clip();
+  drawFn();
+  ctx.restore();
+}
+
+// DOM equivalent of fitCanvasTextToWidth -- shrinks an element's own
+// font-size (down to a floor) only if its content actually overflows its
+// box, resetting to the CSS-declared base size first so a later, shorter
+// value isn't stuck at a previously-shrunk size.
+function fitTextElementToWidth(el, minFontSizePx = 11) {
+  if (!el.dataset.baseFontSize) {
+    el.dataset.baseFontSize = parseFloat(getComputedStyle(el).fontSize);
+  }
+  let fontSize = parseFloat(el.dataset.baseFontSize);
+  el.style.fontSize = `${fontSize}px`;
+  while (el.scrollWidth > el.clientWidth && fontSize > minFontSizePx) {
+    fontSize = Math.max(fontSize - 1, minFontSizePx);
+    el.style.fontSize = `${fontSize}px`;
+  }
+}
+
 // --- Dashboard ---
 
-const fmtMoney = (n) => '$' + Number(n || 0).toFixed(2);
+const fmtMoney = (n) => '$' + formatWholeNumber(n);
 
 // Local (not UTC) yyyy-mm-dd, matching loadCurrentDate() -- toISOString()
 // would shift the date near midnight in timezones ahead of UTC.
@@ -542,7 +645,7 @@ function jumpToCustomerLedger(customerName, customerPhone) {
   searchInput.value = customerPhone || customerName || '';
   searchClearBtn.hidden = !currentSearchQuery;
 
-  if (window.innerWidth <= SIDEBAR_BREAKPOINT) {
+  if (isSidebarOverlayViewport()) {
     sidebar.classList.remove('collapsed');
     showSidebarBtn.style.display = 'none';
   }
@@ -1295,30 +1398,41 @@ function setupCalculationEngine() {
     const qty = parseFloat(qtyInput.value) || 0;
     const price = parseFloat(priceInput.value) || 0;
     const amount = qty * price;
-    
+
+    // data-amount holds the raw number for downstream re-use (grand total
+    // sum, the A5 canvas export) -- textContent is comma-formatted for
+    // display ("1,250"), which parseFloat() would mangle (parseFloat
+    // stops at the comma, reading "1,250" as 1) if anything tried to
+    // re-parse it directly instead.
     if (qty > 0 && price > 0) {
-      amountVal.textContent = amount.toFixed(2);
+      amountVal.textContent = formatWholeNumber(amount);
+      amountVal.dataset.amount = amount;
+      fitTextElementToWidth(amountVal);
       amountVal.classList.remove('is-zero');
     } else {
       amountVal.textContent = '';
+      amountVal.dataset.amount = '0';
       amountVal.classList.add('is-zero');
     }
-    
+
     recalculateGrandTotal();
   };
-  
+
   const recalculateGrandTotal = () => {
     let grandTotal = 0;
     document.querySelectorAll('.amount-val').forEach((amountEl) => {
-      grandTotal += parseFloat(amountEl.textContent) || 0;
+      grandTotal += parseFloat(amountEl.dataset.amount) || 0;
     });
-    
+
     const grandTotalEl = document.getElementById('grand-total-val');
     if (grandTotal > 0) {
-      grandTotalEl.textContent = grandTotal.toFixed(2);
+      grandTotalEl.textContent = formatWholeNumber(grandTotal);
+      grandTotalEl.dataset.amount = grandTotal;
+      fitTextElementToWidth(grandTotalEl);
       grandTotalEl.classList.remove('is-zero');
     } else {
       grandTotalEl.textContent = '';
+      grandTotalEl.dataset.amount = '0';
       grandTotalEl.classList.add('is-zero');
     }
   };
@@ -1503,29 +1617,49 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
       const priceInput = document.querySelector(`.price-input[data-row="${i}"]`);
       const amountVal = document.querySelector(`.amount-val[data-row="${i}"]`);
       
-      // Draw Quantity
+      const cellFontFamily = '"Noto Sans Myanmar", "Courier Prime", Courier, monospace';
+      const rowY = tableTop + headerHeight + i * rowHeight;
+
+      // Draw Quantity -- not "money," so no comma-grouping, but still
+      // protected from overflowing its column the same as Price/Amount.
+      // drawClippedText() is a hard backstop behind fitCanvasTextToWidth's
+      // font-shrinking: an unrealistically long value could otherwise
+      // still bleed past the column even at the shrink floor.
       const qty = qtyInput ? qtyInput.value : '';
       if (qty && qty !== '0') {
-        eCtx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
-        eCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-        eCtx.fillText(qty, xQty + colQtyWidth / 2, yCenter);
+        fitCanvasTextToWidth(eCtx, qty, colQtyWidth - 16, 18, cellFontFamily);
+        drawClippedText(eCtx, xQty, rowY, colQtyWidth, rowHeight, () => {
+          eCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+          eCtx.fillText(qty, xQty + colQtyWidth / 2, yCenter);
+        });
       }
-      
-      // Draw Price
-      const price = priceInput ? priceInput.value : '';
-      if (price && parseFloat(price) > 0) {
-        eCtx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
-        eCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-        eCtx.fillText(parseFloat(price).toFixed(2), xPrice + colPriceWidth / 2, yCenter);
+
+      // Draw Price -- whole number, comma-grouped (the business doesn't
+      // use decimal places), font shrinks to fit if it would otherwise
+      // overflow the column.
+      const price = priceInput ? parseFloat(priceInput.value) || 0 : 0;
+      if (price > 0) {
+        const priceText = formatWholeNumber(price);
+        fitCanvasTextToWidth(eCtx, priceText, colPriceWidth - 16, 18, cellFontFamily);
+        drawClippedText(eCtx, xPrice, rowY, colPriceWidth, rowHeight, () => {
+          eCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+          eCtx.fillText(priceText, xPrice + colPriceWidth / 2, yCenter);
+        });
       }
-      
-      // Draw Calculated Amount (with blue stamped ink style)
-      const amount = amountVal ? amountVal.textContent : '0.00';
-      if (amount && parseFloat(amount) > 0) {
-        eCtx.font = 'bold 18px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
-        eCtx.fillStyle = '#1d4ed8'; // Stamped Blue Ink
+
+      // Draw Calculated Amount (with blue stamped ink style). Reads the
+      // raw value from data-amount, not the displayed text -- amountVal's
+      // textContent is now comma-formatted ("1,250"), and parseFloat()
+      // would mangle that (it stops at the comma, reading just "1").
+      const amount = amountVal ? parseFloat(amountVal.dataset.amount) || 0 : 0;
+      if (amount > 0) {
+        const amountText = formatWholeNumber(amount);
         eCtx.textAlign = 'right';
-        eCtx.fillText(parseFloat(amount).toFixed(2), xAmount + colAmountWidth - 24, yCenter);
+        fitCanvasTextToWidth(eCtx, amountText, colAmountWidth - 32, 18, cellFontFamily);
+        drawClippedText(eCtx, xAmount, rowY, colAmountWidth, rowHeight, () => {
+          eCtx.fillStyle = '#1d4ed8'; // Stamped Blue Ink
+          eCtx.fillText(amountText, xAmount + colAmountWidth - 24, yCenter);
+        });
         eCtx.textAlign = 'center'; // reset
       }
       
@@ -1579,12 +1713,20 @@ function renderCompositeVoucher(sequenceNum, dateString, paymentMethod, status, 
     
     eCtx.strokeRect(852, footerTop + 15, 260, 76);
     
-    // Print grand total value
+    // Print grand total value -- already comma-formatted, whole-number
+    // text from grand-total-val (see recalculateGrandTotal()); just
+    // drawn directly, never re-parsed as a number here, so the comma
+    // formatting is safe as-is. Font shrinks to fit the 260px total box
+    // if the total is large enough to otherwise overflow it, with
+    // drawClippedText() as the hard backstop behind that, same reasoning
+    // as the Qty/Price/Amount columns above.
     const grandTotal = document.getElementById('grand-total-val').textContent;
-    eCtx.font = 'bold 24px "Noto Sans Myanmar", "Courier Prime", Courier, monospace';
-    eCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+    fitCanvasTextToWidth(eCtx, grandTotal, 260 - 32, 24, '"Noto Sans Myanmar", "Courier Prime", Courier, monospace');
     eCtx.textAlign = 'right';
-    eCtx.fillText(grandTotal, 1112 - 24, footerTop + 55);
+    drawClippedText(eCtx, 852, footerTop + 15, 260, 76, () => {
+      eCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      eCtx.fillText(grandTotal, 1112 - 24, footerTop + 55);
+    });
     
     // 6. Void stamp overlay
     if (status === 'Void') {
@@ -1675,7 +1817,7 @@ async function renderVoucherList(vouchers) {
         <span class="card-customer">${escapeHtml(v.customer_name)}</span>
         <div class="card-row-bottom">
           <span class="card-payment ${paymentClass}">${v.payment_method}</span>
-          <span class="card-total">$${Number(v.total_amount).toFixed(2)}</span>
+          <span class="card-total">${fmtMoney(v.total_amount)}</span>
         </div>
         <div class="card-footer-row">
           <span class="status-pill sm ${status.className}">${status.label}</span>
@@ -1769,16 +1911,56 @@ function closeVoucherDetail() {
   activeVoucher = null;
 }
 
+// 1 = "fit to screen" (the default, no explicit size -- handled by CSS
+// max-width/max-height: 100%). Anything after that sets an explicit pixel
+// width based on the image's natural size, which is what gives
+// lightbox-body's overflow: auto something real to scroll/pan across.
+const LIGHTBOX_ZOOM_LEVELS = [1, 1.25, 1.5, 2, 2.5, 3];
+let lightboxZoomIndex = 0;
+
+function applyLightboxZoom() {
+  if (lightboxZoomIndex === 0) {
+    lightboxImg.classList.remove('is-zoomed');
+    lightboxImg.style.width = '';
+  } else {
+    lightboxImg.classList.add('is-zoomed');
+    const factor = LIGHTBOX_ZOOM_LEVELS[lightboxZoomIndex];
+    const naturalWidth = lightboxImg.naturalWidth || 1160;
+    lightboxImg.style.width = `${Math.round(naturalWidth * factor)}px`;
+  }
+  lightboxZoomOutBtn.disabled = lightboxZoomIndex === 0;
+  lightboxZoomInBtn.disabled = lightboxZoomIndex === LIGHTBOX_ZOOM_LEVELS.length - 1;
+}
+
+// Reuses modalVoucherImg's already-resolved signed URL -- no need to
+// refetch, the detail modal must already be open (and that image loaded)
+// for the expand button to be visible at all.
+function openVoucherLightbox() {
+  lightboxImg.src = modalVoucherImg.src;
+  lightboxTitle.textContent = modalVoucherId.textContent;
+  lightboxZoomIndex = 0;
+  applyLightboxZoom();
+  lightboxBody.scrollTop = 0;
+  lightboxBody.scrollLeft = 0;
+  voucherLightbox.classList.add('active');
+}
+
+function closeVoucherLightbox() {
+  voucherLightbox.classList.remove('active');
+}
+
 // Reset form fields
 function clearVoucherFields() {
   document.querySelectorAll('.qty-input').forEach(i => i.value = '');
   document.querySelectorAll('.price-input').forEach(i => i.value = '');
   document.querySelectorAll('.amount-val').forEach(a => {
     a.textContent = '';
+    a.dataset.amount = '0'; // not just textContent -- renderCompositeVoucher() reads this directly, a stale value here would draw a phantom amount on the next voucher
     a.classList.add('is-zero');
   });
   const grandTotalEl = document.getElementById('grand-total-val');
   grandTotalEl.textContent = '';
+  grandTotalEl.dataset.amount = '0';
   grandTotalEl.classList.add('is-zero');
   customerNameInput.value = '';
   customerPhoneInput.value = '';
@@ -1816,7 +1998,10 @@ function setSaveButtonsLoading(loading) {
   });
 }
 
-async function handleSaveVoucher({ print = false } = {}) {
+// printMode: 'none' (Save Only) | 'a5' (Print A5 Voucher) | 'receipt'
+// (Print 80mm Receipt) -- which one, if any, is decided by the Save &
+// Print choice modal before this is ever called; see openSavePrintChoiceModal().
+async function handleSaveVoucher({ printMode = 'none' } = {}) {
   if (isSaving) return; // belt-and-suspenders against a double-click slipping through
 
   // Required -- checked before reserve_voucher_sequence_number below, not
@@ -1938,9 +2123,12 @@ async function handleSaveVoucher({ print = false } = {}) {
       updateResultCount();
     }
 
-    if (print) {
+    if (printMode === 'a5') {
       await PrintService.printVoucher(finalVoucher);
       showToast(`Voucher ${displayId} saved and sent to print.`, 'success');
+    } else if (printMode === 'receipt') {
+      await PrintService.printThermalReceipt(finalVoucher);
+      showToast(`Voucher ${displayId} saved and receipt sent to print.`, 'success');
     } else {
       showToast(`Voucher ${displayId} saved.`, 'success');
     }
@@ -2191,21 +2379,18 @@ function buildPrintHtml(imageUrl, voucher) {
 
 // Phase 1 of 80mm thermal receipt printing: plain browser window.print()
 // through the Android Print Framework to whatever print service the
-// printer (e.g. XP-80T) registers -- no ESC/POS, no handwriting images, no
-// item lines yet (handwriting images are a separate, later, opt-in toggle --
-// item NAMES only exist as ink in the canvas, with no typed equivalent, so
-// they can never appear as text here regardless). Deliberately omits
-// Staff/Made By -- that's internal-only and must never appear on anything
-// customer-facing, same rule as the A5 voucher/PDF (see buildPrintHtml
-// below, which also never reads it).
+// printer (e.g. XP-80T) registers -- no ESC/POS, no handwriting images
+// (handwriting only exists as ink in the canvas, with no typed equivalent,
+// so it can never appear as text here -- typed-mode rows are the only
+// ones that ever get a name line, see buildThermalReceiptHtml below).
+// Deliberately omits Staff/Made By -- that's internal-only and must never
+// appear on anything customer-facing, same rule as the A5 voucher/PDF (see
+// buildPrintHtml below, which also never reads it).
 //
-// Comma-grouped, no currency symbol, no decimals unless the amount actually
-// has cents -- matches this shop's real currency convention, distinct from
-// fmtMoney()'s '$X.XX' used elsewhere (Dashboard, A5) which this
-// deliberately does not touch.
-function formatReceiptAmount(n) {
-  return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
+// Item rows/total use formatWholeNumber() (whole numbers, comma-grouped,
+// no currency symbol) -- the same one Dashboard/ledger/A5 use now, after
+// this used to keep its own near-identical copy that still allowed up to
+// 2 decimal places.
 
 function buildThermalReceiptHtml(voucher) {
   const displayId = formatVoucherID(voucher.sequence_number);
@@ -2224,11 +2409,29 @@ function buildThermalReceiptHtml(voucher) {
   // printing, same filter renderCompositeVoucher() uses for the A5 PNG.
   const itemRows = (voucher.items || []).filter((it) => Number(it.amount) > 0);
 
+  // Typed-mode rows get a name line above the qty/price/amount line
+  // ("Steel Pipe 1/2 inch" / "20 × 20,000 = 400,000"); handwriting rows
+  // (no typedName) keep the existing single numbered line unchanged.
+  // Checked on typedName directly, not nameMode, so this is correct even
+  // for any historical row whose mode/text combination doesn't line up
+  // perfectly -- if there's real typed text, show it; if not, don't.
+  const itemLines = itemRows.map((it, idx) => {
+    const calcLine = `${formatWholeNumber(it.qty)} × ${formatWholeNumber(it.price)} = ${formatWholeNumber(it.amount)}`;
+    const typedName = (it.typedName || '').trim();
+    if (typedName) {
+      return `<div>${escapeHtml(typedName)}</div><div>${calcLine}</div>`;
+    }
+    return `<div>${idx + 1}) ${calcLine}</div>`;
+  }).join('\n    ');
+
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>${displayId}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Myanmar:wght@400;700&display=swap" rel="stylesheet">
 <style>
   @page {
     size: 80mm auto;
@@ -2245,7 +2448,10 @@ function buildThermalReceiptHtml(voucher) {
     width: 72mm;
     font-size: 11px;
     line-height: 1.35;
-    font-family: 'Courier New', Courier, monospace;
+    /* Noto Sans Myanmar first so typed Burmese item names actually have
+       glyph coverage -- confirmed against tests/burmese-font-rendering-spike.html
+       before this was wired in, same reasoning as the A5 canvas renderer. */
+    font-family: 'Noto Sans Myanmar', 'Courier New', Courier, monospace;
   }
   .center { text-align: center; }
   .bold { font-weight: 700; }
@@ -2273,10 +2479,10 @@ function buildThermalReceiptHtml(voucher) {
     ${itemRows.length > 0 ? `
     <div class="divider"></div>
     <div class="bold">Items</div>
-    ${itemRows.map((it, idx) => `<div>${idx + 1}) ${formatReceiptAmount(it.qty)} × ${formatReceiptAmount(it.price)} = ${formatReceiptAmount(it.amount)}</div>`).join('\n    ')}
+    ${itemLines}
     ` : ''}
     <div class="divider"></div>
-    <div class="row total"><span>Total</span><span>${formatReceiptAmount(voucher.total_amount)}</span></div>
+    <div class="row total"><span>Total</span><span>${formatWholeNumber(voucher.total_amount)}</span></div>
     <div class="divider"></div>
     <div class="center">Thank you!</div>
   </div>
@@ -2325,7 +2531,19 @@ const PrintService = {
     if (printWindow) {
       printWindow.document.write(buildThermalReceiptHtml(updated));
       printWindow.document.close();
-      printWindow.onload = () => printWindow.print();
+      // Unlike the A5 path (an <img>, already-rasterized, no font timing
+      // concern), this window renders live text -- window.onload can fire
+      // before the Noto Sans Myanmar webfont actually finishes loading, so
+      // printing on bare onload risks falling back to a font with no
+      // Myanmar glyphs for that one print. Wait for document.fonts.ready
+      // first; fall back to printing immediately if the API isn't there.
+      printWindow.onload = () => {
+        if (printWindow.document.fonts && printWindow.document.fonts.ready) {
+          printWindow.document.fonts.ready.then(() => printWindow.print());
+        } else {
+          printWindow.print();
+        }
+      };
     } else {
       showToast('Could not open the print window -- check your browser\'s pop-up blocker.', 'error');
     }
@@ -2740,8 +2958,34 @@ clearAllBtn.addEventListener('click', async () => {
   }
 });
 
-saveOnlyBtn.addEventListener('click', () => handleSaveVoucher({ print: false }));
-savePrintBtn.addEventListener('click', () => handleSaveVoucher({ print: true }));
+// "Save & Print" no longer assumes a format -- it just opens the choice
+// modal; nothing is saved until one of the three action buttons inside it
+// is actually clicked. The dedicated "Save Only" button bypasses the modal
+// entirely, same as it always has.
+function openSavePrintChoiceModal() {
+  savePrintChoiceModal.classList.add('active');
+}
+function closeSavePrintChoiceModal() {
+  savePrintChoiceModal.classList.remove('active');
+}
+
+saveOnlyBtn.addEventListener('click', () => handleSaveVoucher({ printMode: 'none' }));
+savePrintBtn.addEventListener('click', openSavePrintChoiceModal);
+closeSavePrintChoiceBtn.addEventListener('click', closeSavePrintChoiceModal);
+choiceCancelBtn.addEventListener('click', closeSavePrintChoiceModal);
+
+choicePrintA5Btn.addEventListener('click', () => {
+  closeSavePrintChoiceModal();
+  handleSaveVoucher({ printMode: 'a5' });
+});
+choicePrintReceiptBtn.addEventListener('click', () => {
+  closeSavePrintChoiceModal();
+  handleSaveVoucher({ printMode: 'receipt' });
+});
+choiceSaveOnlyBtn.addEventListener('click', () => {
+  closeSavePrintChoiceModal();
+  handleSaveVoucher({ printMode: 'none' });
+});
 searchInput.addEventListener('input', handleSearch);
 searchClearBtn.addEventListener('click', handleClearSearch);
 // Ledger Filters modal's own listeners are wired inline, right next to
@@ -2755,6 +2999,24 @@ markPaidBtn.addEventListener('click', handleMarkPaid);
 markUnpaidBtn.addEventListener('click', handleMarkUnpaid);
 printBtn.addEventListener('click', handlePrintActiveVoucher);
 printThermalBtn.addEventListener('click', handlePrintThermalActiveVoucher);
+expandPreviewBtn.addEventListener('click', openVoucherLightbox);
+closeLightboxBtn.addEventListener('click', closeVoucherLightbox);
+lightboxZoomInBtn.addEventListener('click', () => {
+  if (lightboxZoomIndex < LIGHTBOX_ZOOM_LEVELS.length - 1) {
+    lightboxZoomIndex += 1;
+    applyLightboxZoom();
+  }
+});
+lightboxZoomOutBtn.addEventListener('click', () => {
+  if (lightboxZoomIndex > 0) {
+    lightboxZoomIndex -= 1;
+    applyLightboxZoom();
+  }
+});
+lightboxZoomFitBtn.addEventListener('click', () => {
+  lightboxZoomIndex = 0;
+  applyLightboxZoom();
+});
 
 // Dashboard
 openDashboardBtn.addEventListener('click', openDashboard);
@@ -2787,10 +3049,22 @@ showSidebarBtn.addEventListener('click', () => {
 // index.css) instead of a flex sibling, so it must start collapsed or it
 // covers the workspace underneath it. Only re-applied when crossing the
 // breakpoint, so it doesn't fight a manual toggle made within the same regime.
-const SIDEBAR_BREAKPOINT = 900;
+// Must match index.css's `@media (max-width: 900px), (max-height: 820px)`
+// exactly -- that's what switches .sidebar to position:absolute (an
+// overlay drawer rather than a normal flex sibling). This was width-only
+// for a while after the CSS breakpoint grew a height arm (to catch
+// landscape tablets), which meant a wide-but-short viewport (e.g. a
+// Galaxy Tab A8 in landscape, ~962x600) got the CSS's overlay behavior
+// without ever being auto-collapsed for it -- the sidebar sat open on top
+// of the workspace permanently, with no width-based trigger to close it,
+// obscuring whatever was underneath (the footer's leftmost controls).
+function isSidebarOverlayViewport() {
+  return window.innerWidth <= 900 || window.innerHeight <= 820;
+}
+
 let sidebarWasNarrow = null;
 function syncSidebarForViewport() {
-  const isNarrow = window.innerWidth <= SIDEBAR_BREAKPOINT;
+  const isNarrow = isSidebarOverlayViewport();
   if (isNarrow === sidebarWasNarrow) return;
   sidebarWasNarrow = isNarrow;
   sidebar.classList.toggle('collapsed', isNarrow);

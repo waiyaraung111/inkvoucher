@@ -160,6 +160,26 @@ textarea {
   font-weight: 600;
 }
 
+/* Build/version indicator -- in normal document flow (not position:fixed)
+   specifically to avoid any overlap risk with the footer/header content
+   this app has fought layout-clipping issues with before. Visible
+   whenever the sidebar is expanded; not present at all when collapsed,
+   same trade-off as the rest of the sidebar's content on narrow tablets.
+   For support: ask what this says to immediately tell a stale cached
+   build apart from a real bug in the latest deploy. */
+.build-version-badge {
+  font-family: var(--font-serif);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  user-select: text;
+}
+
+.sidebar .build-version-badge {
+  padding: 6px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
 .toggle-sidebar-btn {
   background: transparent;
   border: none;
@@ -379,6 +399,31 @@ textarea {
 .filters-modal-body {
   align-items: stretch;
   gap: 20px;
+}
+
+/* ==========================================================================
+   Save & Print choice modal
+   ========================================================================== */
+.save-print-choice-card {
+  width: min(380px, 92vw);
+}
+
+.save-print-choice-body {
+  align-items: stretch;
+  gap: 12px;
+}
+
+.save-print-choice-hint {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.save-print-choice-btn {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 14px 18px;
+  font-size: 0.95rem;
 }
 
 .filters-section {
@@ -1015,18 +1060,25 @@ textarea {
   background-size: 100% 100%; /* Ruled line background */
 }
 
-.col-qty { 
-  width: 60px; 
-  border-right: 1.5px solid rgba(15, 23, 42, 0.5); 
+/* overflow: hidden on these three is a hard backstop behind the font-
+   shrinking in fitTextElementToWidth() (app.js) -- an absurdly large
+   value could otherwise still bleed past the column border even at the
+   shrink floor; this guarantees it never does. */
+.col-qty {
+  width: 60px;
+  border-right: 1.5px solid rgba(15, 23, 42, 0.5);
+  overflow: hidden;
 }
 
-.col-price { 
-  width: 90px; 
-  border-right: 1.5px solid rgba(15, 23, 42, 0.5); 
+.col-price {
+  width: 90px;
+  border-right: 1.5px solid rgba(15, 23, 42, 0.5);
+  overflow: hidden;
 }
 
-.col-amount { 
-  width: 100px; 
+.col-amount {
+  width: 100px;
+  overflow: hidden;
 }
 
 .table-header .col {
@@ -1282,6 +1334,10 @@ textarea {
   background-color: rgba(15, 23, 42, 0.01);
   display: flex;
   align-items: center;
+  /* Hard backstop behind the font-shrinking in fitTextElementToWidth() --
+     an absurdly large total could otherwise still bleed past the box
+     border even at the shrink floor; this guarantees it never does. */
+  overflow: hidden;
 }
 
 .grand-total-val {
@@ -1661,6 +1717,12 @@ textarea {
 .modal-body {
   padding: 24px;
   overflow-y: auto;
+  /* Explicit, not just relying on overflow-y: auto implying it -- this is
+     the flex child that's supposed to shrink/scroll when modal-card's
+     90vh budget is tight; its own children (voucher-preview-container,
+     settlement-section) need flex-shrink: 0 so THEY don't shrink/distort
+     instead. Same pattern as .canvas-section vs .workspace-header/footer. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1671,6 +1733,7 @@ textarea {
   display: flex;
   gap: 8px;
   width: 100%;
+  flex-shrink: 0;
 }
 
 .voucher-preview-container {
@@ -1681,6 +1744,16 @@ textarea {
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
   position: relative;
   background-color: var(--paper-bg);
+  /* Without this, modal-body's flex layout (badges + this + Owner
+     Settlement, all stacked in a column) compresses this box below the
+     image's natural aspect-ratio height whenever the modal's total
+     content exceeds its 90vh budget -- since this has overflow: hidden,
+     that compression visually crops the voucher image instead of letting
+     modal-body's own overflow-y: auto scroll, which is what's actually
+     supposed to handle an over-tall modal. flex-shrink: 0 keeps this box
+     (and the image inside it) at its real size no matter what; modal-body
+     scrolls instead. */
+  flex-shrink: 0;
 }
 
 .voucher-preview-img {
@@ -1715,6 +1788,123 @@ textarea {
   opacity: 0.85;
 }
 
+.expand-preview-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: none;
+  background-color: rgba(15, 23, 42, 0.75);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  z-index: 11; /* above the void overlay's z-index: 10 */
+}
+
+.expand-preview-btn:hover {
+  background-color: rgba(15, 23, 42, 0.92);
+}
+
+/* ==========================================================================
+   Full-Screen Voucher Preview Lightbox -- opened from the expand button
+   above. Shows only the voucher image (no Owner Settlement/internal
+   controls); sized to fit the whole voucher on screen without scrolling
+   by default, with explicit zoom in/out for a closer look afterward.
+   ========================================================================== */
+.lightbox-card {
+  width: 95vw;
+  height: 92vh;
+  max-width: 1100px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: scale(0.95);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.lightbox-overlay.active .lightbox-card {
+  transform: scale(1);
+}
+
+.lightbox-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.lightbox-title {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.lightbox-zoom-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.lightbox-zoom-btn {
+  min-width: 44px; /* touch target floor for iPad/Galaxy Tab */
+  padding: 8px 14px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.lightbox-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.lightbox-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background-color: rgba(0, 0, 0, 0.25);
+  padding: 16px;
+  /* display: flex (row, no align/justify center) + margin: auto on the
+     image, not justify-content/align-items: center on this -- centering
+     via flex's own alignment clips the far edge of an overflowing child
+     in Safari/WebKit, which matters here since iPad is a target device
+     for the zoomed-in, scrollable state. margin: auto centers when the
+     image fits and stays fully reachable/scrollable when it doesn't. */
+  display: flex;
+}
+
+.lightbox-img {
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Zoomed-in state: applyLightboxZoom() in app.js sets an explicit pixel
+   width here, so the box model actually grows and lightbox-body's
+   overflow: auto has real content to scroll/pan across -- max-width: 100%
+   above would otherwise force it back down to fit regardless. */
+.lightbox-img.is-zoomed {
+  max-width: none;
+  max-height: none;
+}
+
 .modal-footer {
   padding: 20px 24px;
   border-top: 1px solid var(--border-color);
@@ -1744,6 +1934,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .settlement-header-row {
@@ -2224,6 +2415,11 @@ textarea {
   color: var(--color-danger);
   font-size: 0.85rem;
   margin-top: 12px;
+}
+
+.auth-card .build-version-badge {
+  text-align: center;
+  margin-top: 18px;
 }
 
 .auth-submit-btn {

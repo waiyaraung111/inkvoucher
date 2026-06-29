@@ -1,0 +1,32 @@
+# Cloudflare Workers Static Assets reads this file from the assets
+# directory and applies these rules on top of (overriding) its own
+# defaults. See build.js for the matching half of this: it injects a
+# content-hash query string into index.html's references to these files,
+# so the URLs below actually change whenever the file content does --
+# that's what makes the aggressive caching on them safe.
+#
+# index.html (and the bare "/", which serves it) is explicitly never
+# cached -- a client must always revalidate with the server, so it picks
+# up a new deploy's references to the new asset URLs immediately, without
+# a hard refresh. This is close to Cloudflare's own default for static
+# assets (public, max-age=0, must-revalidate) -- written out explicitly
+# here so it doesn't depend on that default never changing.
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+# These specific files' URLs change (via the ?v=<hash> query string) on
+# any build where their content changes, so it's safe to tell the browser
+# to cache them for a full year with no revalidation at all -- an old
+# cached copy at an old URL is simply never requested again once
+# index.html (always fresh, see above) starts pointing at the new one.
+/app.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/supabase-client.js
+  Cache-Control: public, max-age=31536000, immutable

@@ -30,6 +30,7 @@
         <p class="auth-error" id="auth-error" style="display: none;"></p>
         <button type="submit" class="btn btn-primary auth-submit-btn" id="login-btn">Log In</button>
       </form>
+      <p class="build-version-badge" title="Tell support this when reporting an issue">Version: dev &middot; Build: local &middot; Environment: <span class="build-env-value" data-app-env="auto">…</span></p>
     </div>
   </div>
 
@@ -43,6 +44,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
       </div>
+      <div class="build-version-badge" title="Tell support this when reporting an issue">Version: dev &middot; Build: local &middot; Environment: <span class="build-env-value" data-app-env="auto">…</span></div>
       <div class="search-box">
         <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
         <input type="text" id="search-input" placeholder="Search customer, ID, date, phone...">
@@ -482,6 +484,10 @@
           <div class="voucher-preview-container">
             <img class="voucher-preview-img" id="modal-voucher-img" src="" alt="Handwritten Voucher">
             <div class="void-overlay" id="modal-void-overlay">VOID</div>
+            <button class="expand-preview-btn" id="expand-preview-btn" title="View Full Voucher">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+              <span>View Full Voucher</span>
+            </button>
           </div>
 
           <!-- Owner Settlement -- internal only, never part of the printed
@@ -523,6 +529,28 @@
               Download
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Full-Screen Voucher Preview Lightbox -- customer-facing image only,
+         no Owner Settlement or other internal controls (those stay in the
+         detail modal above). Never used for print/PDF output. -->
+    <div class="modal-overlay lightbox-overlay" id="voucher-lightbox">
+      <div class="lightbox-card">
+        <div class="lightbox-header">
+          <span class="lightbox-title" id="lightbox-voucher-id">#V-0000</span>
+          <div class="lightbox-zoom-controls">
+            <button class="btn btn-secondary lightbox-zoom-btn" id="lightbox-zoom-out-btn" title="Zoom Out">−</button>
+            <button class="btn btn-secondary lightbox-zoom-btn" id="lightbox-zoom-fit-btn" title="Fit to Screen">Fit</button>
+            <button class="btn btn-secondary lightbox-zoom-btn" id="lightbox-zoom-in-btn" title="Zoom In">+</button>
+          </div>
+          <button class="close-modal-btn" id="close-lightbox-btn" title="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div class="lightbox-body" id="lightbox-body">
+          <img class="lightbox-img" id="lightbox-voucher-img" src="" alt="Full Voucher Preview">
         </div>
       </div>
     </div>
@@ -777,6 +805,43 @@
         <div class="modal-footer">
           <button class="btn btn-secondary text-danger" id="filters-clear-all-btn">Clear All</button>
           <button class="btn btn-primary" id="filters-apply-btn">Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save & Print choice modal -- "Save & Print" no longer assumes a
+         format now that there are two (A5 voucher, 80mm receipt). Nothing
+         is saved until one of the three action buttons is chosen; Cancel
+         saves nothing at all, same as never having clicked Save & Print. -->
+    <div class="modal-overlay" id="save-print-choice-modal">
+      <div class="modal-card save-print-choice-card">
+        <div class="modal-header">
+          <div class="modal-title-info">
+            <h3>Save &amp; Print</h3>
+          </div>
+          <button class="close-modal-btn" id="close-save-print-choice-btn" title="Cancel">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+
+        <div class="modal-body save-print-choice-body">
+          <p class="save-print-choice-hint">Choose how to print this voucher, or just save it.</p>
+
+          <button type="button" class="btn btn-primary save-print-choice-btn" id="choice-print-a5-btn">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Print A5 Voucher
+          </button>
+          <button type="button" class="btn btn-secondary save-print-choice-btn" id="choice-print-receipt-btn">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Print 80mm Receipt
+          </button>
+          <button type="button" class="btn btn-secondary save-print-choice-btn" id="choice-save-only-btn">
+            Save Only
+          </button>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary text-danger" id="choice-cancel-btn">Cancel</button>
         </div>
       </div>
     </div>
