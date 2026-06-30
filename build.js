@@ -45,20 +45,47 @@ const path = require('path');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
 
+// SUPABASE_URL / SUPABASE_ANON_KEY  →  update the PRODUCTION config
+// DEMO_SUPABASE_URL / DEMO_SUPABASE_ANON_KEY  →  update the DEMO config
+// Either or both may be set; the other keeps whatever is already in the file.
+// If neither is set, supabase-client.js is left as-is (local dev workflow).
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const DEMO_SUPABASE_URL = process.env.DEMO_SUPABASE_URL;
+const DEMO_SUPABASE_ANON_KEY = process.env.DEMO_SUPABASE_ANON_KEY;
+
+const clientPath = path.join(__dirname, 'supabase-client.js');
 
 if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-  const outPath = path.join(__dirname, 'supabase-client.js');
-  const content = `const SUPABASE_URL = '${SUPABASE_URL}';
-const SUPABASE_ANON_KEY = '${SUPABASE_ANON_KEY}';
+  let clientJs = fs.readFileSync(clientPath, 'utf8');
+  clientJs = clientJs.replace(
+    /(SUPABASE_PRODUCTION\s*=\s*\{[^}]*?url:\s*')[^']*(')/s,
+    `$1${SUPABASE_URL}$2`
+  );
+  clientJs = clientJs.replace(
+    /(SUPABASE_PRODUCTION\s*=\s*\{[^}]*?anonKey:\s*')[^']*(')/s,
+    `$1${SUPABASE_ANON_KEY}$2`
+  );
+  fs.writeFileSync(clientPath, clientJs);
+  console.log('Updated SUPABASE_PRODUCTION config in supabase-client.js.');
+}
 
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-`;
-  fs.writeFileSync(outPath, content);
-  console.log('Generated supabase-client.js from environment variables.');
-} else {
-  console.log('SUPABASE_URL/SUPABASE_ANON_KEY not set -- leaving existing supabase-client.js as-is.');
+if (DEMO_SUPABASE_URL && DEMO_SUPABASE_ANON_KEY) {
+  let clientJs = fs.readFileSync(clientPath, 'utf8');
+  clientJs = clientJs.replace(
+    /(SUPABASE_DEMO\s*=\s*\{[^}]*?url:\s*')[^']*(')/s,
+    `$1${DEMO_SUPABASE_URL}$2`
+  );
+  clientJs = clientJs.replace(
+    /(SUPABASE_DEMO\s*=\s*\{[^}]*?anonKey:\s*')[^']*(')/s,
+    `$1${DEMO_SUPABASE_ANON_KEY}$2`
+  );
+  fs.writeFileSync(clientPath, clientJs);
+  console.log('Updated SUPABASE_DEMO config in supabase-client.js.');
+}
+
+if (!SUPABASE_URL && !DEMO_SUPABASE_URL) {
+  console.log('No SUPABASE_URL / DEMO_SUPABASE_URL set -- leaving supabase-client.js as-is.');
 }
 
 const VERSIONED_ASSETS = ['app.js', 'index.css', 'supabase-client.js'];

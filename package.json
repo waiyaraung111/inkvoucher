@@ -4,7 +4,9 @@
   "description": "InkVoucher -- hybrid handwritten payment voucher app",
   "scripts": {
     "build": "node build.js",
+    "build:demo": "node build.demo.js",
     "deploy": "npm run build && wrangler deploy",
+    "deploy:demo": "npm run build:demo && wrangler deploy --config wrangler.demo.jsonc",
     "test:dashboard-access": "node tests/dashboard-access.js"
   }
 }

@@ -1,0 +1,12 @@
+{
+  // Demo deployment -- worker name "inkvoucher-demo" gives it the
+  // hostname inkvoucher-demo.workers.dev, which triggers the demo
+  // Supabase project in supabase-client.js (hostname contains "-demo").
+  // Deploy with: npm run deploy:demo
+  "name": "inkvoucher-demo",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "404-page"
+  }
+}

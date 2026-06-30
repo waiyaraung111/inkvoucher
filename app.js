@@ -17,6 +17,7 @@
 function detectEnvironmentFromHostname() {
   const host = window.location.hostname;
   if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) return 'Development';
+  if (/(?:^|[.-])demo(?:[.-]|$)/i.test(host)) return 'Demo / Testing';
   if (/(?:^|[.-])(?:staging|test|testing)(?:[.-]|$)/i.test(host)) return 'Testing';
   return 'Production';
 }
