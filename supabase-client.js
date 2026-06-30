@@ -8,8 +8,8 @@ const SUPABASE_PRODUCTION = {
 // Fill in url and anonKey after creating the project at supabase.com.
 // See supabase/schema.sql + supabase/demo_seed.sql to set it up.
 const SUPABASE_DEMO = {
-  url: 'REPLACE_WITH_DEMO_SUPABASE_URL',
-  anonKey: 'REPLACE_WITH_DEMO_SUPABASE_ANON_KEY',
+  url: 'https://djiwieuiexkjvycrlsge.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRqaXdpZXVpZXhranZ5Y3Jsc2dlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4MTM0MzMsImV4cCI6MjA5ODM4OTQzM30.Qyrutcf4hYpO4xRV4ujj3Sz3OZZ8GVAIJUzs2CTmvtQ',
 };
 
 // Pick the right project based on the hostname the page loaded from.
